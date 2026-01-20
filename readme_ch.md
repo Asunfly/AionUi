@@ -133,7 +133,8 @@ AionUi --webui
 AionUi --webui --remote
 ```
 
-> 💡 **需要详细配置指南？** 查看 [WebUI 配置教程](https://github.com/iOfficeAI/AionUi/wiki/WebUI-Configuration-Guide-Chinese) - 包含各平台完整启动命令
+> 💡 **需要详细配置指南？** 查看 [WebUI 配置教程](https://github.com/iOfficeAI/AionUi/wiki/WebUI-Configuration-Guide-Chinese) - 包含各平台完整启动命令  
+> 🐳 **需要 Docker 部署？** 查看 [Docker 部署指南（中文）](./DOCKER_DEPLOYMENT_CH.md) - 从源码构建镜像 + 一键启动 WebUI
 
 <p align="center">
   <img src="./resources/webui banner.png" alt="WebUI 远程访问演示" width="800">
