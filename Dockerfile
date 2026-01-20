@@ -42,10 +42,13 @@ RUN npm ci
 
 COPY . .
 
-RUN useradd -m -u 1000 -s /bin/bash aionui \
-    && chown -R aionui:aionui /app /home/aionui
+RUN if ! getent passwd 1000 >/dev/null; then \
+      useradd -m -u 1000 -s /bin/bash aionui; \
+    fi \
+    && mkdir -p /home/aionui \
+    && chown -R 1000:1000 /app /home/aionui
 
-USER aionui
+USER 1000
 
 EXPOSE 25808
 
