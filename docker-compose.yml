@@ -1,0 +1,13 @@
+services:
+  aionui-webui:
+    build: .
+    container_name: aionui-webui
+    ports:
+      - "25808:25808"
+    environment:
+      AIONUI_PORT: "25808"
+      AIONUI_ALLOW_REMOTE: "true"
+      AIONUI_HOST: "0.0.0.0"
+    volumes:
+      - ./data:/home/aionui/.config/AionUi
+    restart: unless-stopped
