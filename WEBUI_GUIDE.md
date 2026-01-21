@@ -24,6 +24,8 @@ WebUI mode starts AionUi with an embedded web server, allowing you to:
 
 Default access URL: `http://localhost:25808` (port may vary, check the application output)
 
+> Note: If you see logs like `Output Available: http://localhost:9000`, that is the internal Electron/webpack dev server log endpoint and **not** the WebUI port. Keep using the WebUI port (default 25808) for browser access.
+
 ---
 
 ## Windows
