@@ -34,21 +34,21 @@ RUN apt-get update \
       libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-COPY package.json package-lock.json ./
-COPY scripts ./scripts
-RUN npm ci
-
-COPY . .
-
 RUN if ! getent passwd 1000 >/dev/null; then \
       useradd -m -u 1000 -s /bin/bash aionui; \
     fi \
-    && mkdir -p /home/aionui \
-    && chown -R 1000:1000 /app /home/aionui
+    && mkdir -p /app /home/aionui \
+    && chown 1000:1000 /app /home/aionui
+
+WORKDIR /app
 
 USER 1000
+
+COPY --chown=1000:1000 package.json package-lock.json ./
+COPY --chown=1000:1000 scripts ./scripts
+RUN npm ci
+
+COPY --chown=1000:1000 . .
 
 EXPOSE 25808
 
