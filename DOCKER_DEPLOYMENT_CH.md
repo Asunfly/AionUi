@@ -164,6 +164,11 @@ sudo chown -R 1000:1000 data
 - 仅开放局域网访问时，避免公网暴露
 - 可以在服务器防火墙上限制端口访问
 
+### 4. 构建镜像很慢或卡住
+
+- `npm ci` 会生成较大的 `node_modules`，如果在 Dockerfile 里对 `/app` 做递归 `chown/chmod`，在 Docker Desktop/overlay2 下会非常慢。
+- 本仓库的 Dockerfile 已使用 `COPY --chown` 并避免对 `/app` 递归改权限；若你自定义了 Dockerfile，建议同样避免 `chown -R /app`。
+
 ---
 
 ## ✅ 运行原理说明（面向小白）
