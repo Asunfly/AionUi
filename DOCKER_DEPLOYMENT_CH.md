@@ -151,7 +151,12 @@ ports:
 
 然后用 `http://<服务器IP>:28080` 访问。
 
-### 2. 权限不足 / 数据无法写入
+### 2. 日志里显示 9000 端口
+
+在容器日志里看到类似 `Output Available: http://localhost:9000` 属于 Electron/webpack 的内部日志端口，不是 WebUI 访问端口。  
+WebUI 仍然使用 `AIONUI_PORT`（默认 25808），请以 `http://<服务器IP>:25808` 访问。
+
+### 3. 权限不足 / 数据无法写入
 
 确保宿主机挂载目录有写权限，且与容器运行的 UID/GID 一致：
 
@@ -159,12 +164,12 @@ ports:
 sudo chown -R 1000:1000 data
 ```
 
-### 3. 需要限制访问范围
+### 4. 需要限制访问范围
 
 - 仅开放局域网访问时，避免公网暴露
 - 可以在服务器防火墙上限制端口访问
 
-### 4. 构建镜像很慢或卡住
+### 5. 构建镜像很慢或卡住
 
 - `npm ci` 会生成较大的 `node_modules`，如果在 Dockerfile 里对 `/app` 做递归 `chown/chmod`，在 Docker Desktop/overlay2 下会非常慢。
 - 本仓库的 Dockerfile 已使用 `COPY --chown` 并避免对 `/app` 递归改权限；若你自定义了 Dockerfile，建议同样避免 `chown -R /app`。
