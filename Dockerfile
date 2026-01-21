@@ -48,6 +48,13 @@ COPY --chown=1000:1000 package.json package-lock.json ./
 COPY --chown=1000:1000 scripts ./scripts
 RUN npm ci
 
+USER root
+RUN if [ -f /app/node_modules/electron/dist/chrome-sandbox ]; then \
+      chown root:root /app/node_modules/electron/dist/chrome-sandbox; \
+      chmod 4755 /app/node_modules/electron/dist/chrome-sandbox; \
+    fi
+
+USER 1000
 COPY --chown=1000:1000 . .
 
 EXPOSE 25808
