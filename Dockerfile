@@ -2,7 +2,8 @@ FROM node:22-bookworm-slim
 
 ENV NPM_CONFIG_LOGLEVEL=warn \
     NPM_CONFIG_FUND=false \
-    NPM_CONFIG_AUDIT=false
+    NPM_CONFIG_AUDIT=false \
+    AIONUI_DISABLE_SANDBOX=true
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -42,10 +43,13 @@ RUN npm ci
 
 COPY . .
 
-RUN useradd -m -u 1000 -s /bin/bash aionui \
-    && chown -R aionui:aionui /app /home/aionui
+RUN if ! getent passwd 1000 >/dev/null; then \
+      useradd -m -u 1000 -s /bin/bash aionui; \
+    fi \
+    && mkdir -p /home/aionui \
+    && chown -R 1000:1000 /app /home/aionui
 
-USER aionui
+USER 1000
 
 EXPOSE 25808
 

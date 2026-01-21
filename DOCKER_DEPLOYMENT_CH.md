@@ -11,7 +11,8 @@
 **隔离思路：**
 
 - 使用 Docker 容器运行 AionUi WebUI
-- 以非 root 用户运行进程，降低权限风险
+- 以非 root 用户运行进程（默认使用 UID/GID 1000），降低权限风险
+- 容器内默认禁用 Chromium 沙箱以避免容器环境的 namespace 限制导致崩溃
 - 仅把必要数据目录挂载到宿主机，实现持久化
 - 通过 `AIONUI_ALLOW_REMOTE=true` 让 WebUI 对外访问
 
@@ -106,6 +107,7 @@ docker run -d \
 ```
 
 > 如果你的宿主机默认用户不是 `1000:1000`，可以改用 `sudo chown -R $(id -u):$(id -g) data`。
+> 容器默认以 UID 1000 运行，确保与宿主机用户一致时可避免权限问题。
 
 ---
 
@@ -152,13 +154,23 @@ ports:
 
 ### 2. 权限不足 / 数据无法写入
 
-确保宿主机挂载目录有写权限：
+确保宿主机挂载目录有写权限，且与容器运行的 UID/GID 一致：
 
 ```bash
 sudo chown -R 1000:1000 data
 ```
 
-### 3. 需要限制访问范围
+### 3. Electron/Chromium 沙箱报错（常见日志：Failed to move to new namespace）
+
+容器环境通常缺少所需的用户命名空间能力，已默认通过 `AIONUI_DISABLE_SANDBOX=true` 关闭沙箱。
+
+如果你覆盖了环境变量，可确保保留：
+
+```bash
+-e AIONUI_DISABLE_SANDBOX=true
+```
+
+### 4. 需要限制访问范围
 
 - 仅开放局域网访问时，避免公网暴露
 - 可以在服务器防火墙上限制端口访问
