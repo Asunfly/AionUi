@@ -9,10 +9,38 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileOperationLimiter } from './middleware/security';
+import { isDockerRuntime } from '@/utils/runtime';
 
-// Allow browsing within the running workspace and the current user's home directory only
-// 仅允许在工作目录与当前用户主目录中浏览
-const DEFAULT_ALLOWED_DIRECTORIES = [process.cwd(), os.homedir()]
+const parseAllowedPathsFromEnv = (): string[] => {
+  const raw = process.env.AIONUI_ALLOWED_PATHS || process.env.AIONUI_WORKSPACE_ROOT;
+  if (!raw) return [];
+
+  const baseParts = raw
+    .split(path.delimiter)
+    .flatMap((chunk) => chunk.split(','))
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  return baseParts;
+};
+
+const ALLOWED_PATHS_FROM_ENV = parseAllowedPathsFromEnv();
+
+const buildDefaultAllowedDirectories = (): string[] => {
+  if (ALLOWED_PATHS_FROM_ENV.length > 0) {
+    return ALLOWED_PATHS_FROM_ENV;
+  }
+
+  if (isDockerRuntime()) {
+    return [process.cwd(), path.join(os.homedir(), '.config', 'AionUi'), os.homedir()];
+  }
+
+  return [process.cwd(), os.homedir()];
+};
+
+// Allow browsing within the running workspace and the configured directories only
+// 仅允许在运行目录与配置的基础目录中浏览
+const DEFAULT_ALLOWED_DIRECTORIES = buildDefaultAllowedDirectories()
   .map((dir) => {
     try {
       return fs.realpathSync(dir);
@@ -259,33 +287,33 @@ router.post('/validate', fileOperationLimiter, (req, res) => {
 // 快捷目录获取接口也使用相同的限流策略
 router.get('/shortcuts', fileOperationLimiter, (_req, res) => {
   try {
-    const shortcuts = [
-      {
-        name: 'AionUi Directory',
-        path: process.cwd(),
-        icon: '🤖',
-      },
-      {
-        name: 'Home',
-        path: os.homedir(),
-        icon: '🏠',
-      },
-      {
-        name: 'Desktop',
-        path: path.join(os.homedir(), 'Desktop'),
-        icon: '🖥️',
-      },
-      {
-        name: 'Documents',
-        path: path.join(os.homedir(), 'Documents'),
-        icon: '📄',
-      },
-      {
-        name: 'Downloads',
-        path: path.join(os.homedir(), 'Downloads'),
-        icon: '📥',
-      },
-    ].filter((shortcut) => fs.existsSync(shortcut.path));
+    const shortcuts: Array<{ name: string; path: string; icon: string }> = [];
+    const seen = new Set<string>();
+
+    const addShortcut = (name: string, targetPath: string, icon: string) => {
+      if (!targetPath || seen.has(targetPath)) return;
+      if (!fs.existsSync(targetPath)) return;
+      shortcuts.push({ name, path: targetPath, icon });
+      seen.add(targetPath);
+    };
+
+    addShortcut('AionUi Directory', process.cwd(), '🤖');
+
+    if (ALLOWED_PATHS_FROM_ENV.length > 0) {
+      ALLOWED_PATHS_FROM_ENV.forEach((targetPath, index) => {
+        const name = ALLOWED_PATHS_FROM_ENV.length === 1 ? 'Workspace Root' : `Workspace Root ${index + 1}`;
+        addShortcut(name, targetPath, '📂');
+      });
+    }
+
+    if (!isDockerRuntime() && ALLOWED_PATHS_FROM_ENV.length === 0) {
+      addShortcut('Home', os.homedir(), '🏠');
+      addShortcut('Desktop', path.join(os.homedir(), 'Desktop'), '🖥️');
+      addShortcut('Documents', path.join(os.homedir(), 'Documents'), '📄');
+      addShortcut('Downloads', path.join(os.homedir(), 'Downloads'), '📥');
+    } else {
+      addShortcut('Home', os.homedir(), '🏠');
+    }
 
     res.json(shortcuts);
   } catch (error) {

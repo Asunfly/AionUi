@@ -18,6 +18,7 @@ import { setupBasicMiddleware, setupCors, setupErrorHandler } from './setup';
 import { registerAuthRoutes } from './routes/authRoutes';
 import { registerApiRoutes } from './routes/apiRoutes';
 import { registerStaticRoutes } from './routes/staticRoutes';
+import { isDockerRuntime, shouldOpenExternal } from '@/utils/runtime';
 
 // Express Request 类型扩展定义在 src/webserver/types/express.d.ts
 // Express Request type extension is defined in src/webserver/types/express.d.ts
@@ -182,6 +183,8 @@ export async function startWebServer(port: number, allowRemote = false): Promise
   // Set server configuration
   SERVER_CONFIG.setServerConfig(port, allowRemote);
 
+  const host = process.env.AIONUI_HOST?.trim() || (allowRemote ? SERVER_CONFIG.REMOTE_HOST : SERVER_CONFIG.DEFAULT_HOST);
+
   // 创建 Express 应用和服务器
   // Create Express app and server
   const app = express();
@@ -210,7 +213,7 @@ export async function startWebServer(port: number, allowRemote = false): Promise
   // 启动服务器
   // Start server
   return new Promise((resolve, reject) => {
-    server.listen(port, () => {
+    server.listen(port, host, () => {
       const localUrl = `http://localhost:${port}`;
 
       // 尝试获取服务器 IP（Linux 无桌面环境获取公网 IP，其他环境获取局域网 IP）
@@ -236,9 +239,11 @@ export async function startWebServer(port: number, allowRemote = false): Promise
       // Auto-open browser (only when desktop environment is available)
       // 当 allowRemote 为 true 时，优先打开局域网 IP
       // When allowRemote is true, prefer to open LAN IP
-      if (process.env.DISPLAY || process.platform !== 'linux') {
+      if (shouldOpenExternal()) {
         const urlToOpen = allowRemote && serverIP ? displayUrl : localUrl;
         void shell.openExternal(urlToOpen);
+      } else if (isDockerRuntime()) {
+        console.log('ℹ️  Docker 环境已检测到：已跳过自动打开浏览器。');
       }
 
       // 初始化 WebSocket 适配器
