@@ -134,6 +134,29 @@ docker logs -f aionui-webui
 
 ## ✅ 常见问题排查
 
+### 0. Docker 内无法访问本地文件/目录
+
+WebUI 在 Docker 中默认只允许访问容器内的工作目录与配置目录。  
+如果你需要浏览/选择挂载进来的其他目录，请显式设置允许路径：
+
+```bash
+-e AIONUI_ALLOWED_PATHS="/workspace,/home/aionui/.config/AionUi"
+```
+
+> 说明：
+>
+> - 多个路径可用英文逗号 **或** 冒号分隔（Linux 推荐用冒号）。
+> - 建议把你 `-v` 挂载进来的路径加入白名单。
+
+### 0.1 自动打开浏览器被跳过
+
+Docker 环境会自动跳过 `shell.openExternal`（容器里没有桌面浏览器）。  
+如果你在其他无桌面环境也想强制关闭自动打开，可设置：
+
+```bash
+-e AIONUI_DISABLE_BROWSER=true
+```
+
 ### 1. 端口被占用
 
 修改端口映射：

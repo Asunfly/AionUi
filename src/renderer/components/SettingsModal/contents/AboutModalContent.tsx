@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ipcBridge } from '@/common';
+import { openExternalLink } from '@/renderer/utils/openExternalLink';
 import { Divider, Typography } from '@arco-design/web-react';
 import { Github, Right } from '@icon-park/react';
 import React from 'react';
@@ -20,7 +20,7 @@ const AboutModalContent: React.FC = () => {
 
   const openLink = async (url: string) => {
     try {
-      await ipcBridge.shell.openExternal.invoke(url);
+      await openExternalLink(url);
     } catch (error) {
       console.log('Failed to open link:', error);
     }

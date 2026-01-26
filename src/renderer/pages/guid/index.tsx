@@ -5,6 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
+import { openExternalLink } from '@/renderer/utils/openExternalLink';
 import { ASSISTANT_PRESETS } from '@/common/presets/assistantPresets';
 import type { IProvider, TProviderWithModel } from '@/common/storage';
 import { ConfigStorage } from '@/common/storage';
@@ -151,7 +152,7 @@ const Guid: React.FC = () => {
   // 打开外部链接 / Open external link
   const openLink = useCallback(async (url: string) => {
     try {
-      await ipcBridge.shell.openExternal.invoke(url);
+      await openExternalLink(url);
     } catch (error) {
       console.error('Failed to open external link:', error);
     }
