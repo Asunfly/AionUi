@@ -207,6 +207,7 @@ const Guid: React.FC = () => {
   const [mentionSelectorOpen, setMentionSelectorOpen] = useState(false);
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [loading, setLoading] = useState(false);
+  const sendingRef = useRef(false);
   const [files, setFiles] = useState<string[]>([]);
   const [dir, setDir] = useState<string>('');
   const [currentModel, _setCurrentModel] = useState<TProviderWithModel>();
@@ -797,12 +798,13 @@ const Guid: React.FC = () => {
         // 立即触发刷新，让左侧栏开始加载新会话（在导航前）
         emitter.emit('chat.history.refresh');
 
-        // 然后导航到会话页面
-
         // 然后发送消息（文件通过 files 参数传递，不在消息中添加 @ 前缀）
         // Send message (files passed via files param, no @ prefix in message)
         const workspacePath = conversation.extra?.workspace || '';
         const displayMessage = buildDisplayMessage(input, files, workspacePath);
+
+        // 先导航到会话页面，避免用户快速重复点击导致创建多会话
+        await navigate(`/conversation/${conversation.id}`);
 
         return ipcBridge.geminiConversation.sendMessage
           .invoke({
@@ -810,9 +812,6 @@ const Guid: React.FC = () => {
             conversation_id: conversation.id,
             msg_id: uuid(),
             files,
-          })
-          .then(() => {
-            void navigate(`/conversation/${conversation.id}`);
           })
           .catch((error) => {
             console.error('Failed to send message:', error);
@@ -962,6 +961,8 @@ const Guid: React.FC = () => {
     }
   };
   const sendMessageHandler = () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setLoading(true);
     handleSend()
       .then(() => {
@@ -980,6 +981,7 @@ const Guid: React.FC = () => {
       })
       .finally(() => {
         setLoading(false);
+        sendingRef.current = false;
       });
   };
   const handleInputKeyDown = useCallback(
@@ -1431,9 +1433,7 @@ const Guid: React.FC = () => {
                   disabled={!input.trim() || ((!selectedAgent || selectedAgent === 'gemini' || (isPresetAgent && resolvePresetAgentType(selectedAgentInfo) === 'gemini')) && !currentModel)}
                   icon={<ArrowUp theme='outline' size='14' fill='white' strokeWidth={2} />}
                   onClick={() => {
-                    handleSend().catch((error) => {
-                      console.error('Failed to send message:', error);
-                    });
+                    sendMessageHandler();
                   }}
                 />
               </div>

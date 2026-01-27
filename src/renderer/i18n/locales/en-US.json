@@ -130,6 +130,7 @@
     "downloadCode": "Download {{language}} file",
     "downloadDiff": "Download Diff file",
     "addToChat": "Add to chat",
+    "runPython": "Run",
     "openSplitScreen": "Open split screen",
     "closeSplitScreen": "Close split screen",
     "edit": "Edit",

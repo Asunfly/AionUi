@@ -6,6 +6,8 @@
 
 import { ipcBridge } from '@/common';
 import { useLayoutContext } from '@/renderer/context/LayoutContext';
+import { emitter } from '@/renderer/utils/emitter';
+import type { FileOrFolderItem } from '@/renderer/types/files';
 import { PreviewToolbarExtrasProvider, type PreviewToolbarExtras } from '../../context/PreviewToolbarExtrasContext';
 import { usePreviewContext } from '../../context/PreviewContext';
 import { useResizableSplit } from '@/renderer/hooks/useResizableSplit';
@@ -37,7 +39,7 @@ import { useTranslation } from 'react-i18next';
  */
 const PreviewPanel: React.FC = () => {
   const { t } = useTranslation();
-  const { isOpen, tabs, activeTabId, activeTab, closeTab, switchTab, closePreview, updateContent, saveContent, addDomSnippet } = usePreviewContext();
+  const { isOpen, tabs, activeTabId, activeTab, closeTab, switchTab, collapsePreview, closePreview, updateContent, saveContent, addDomSnippet, addToSendBox, submitSendBox } = usePreviewContext();
   const layout = useLayoutContext();
 
   // 视图状态 / View states
@@ -253,11 +255,67 @@ const PreviewPanel: React.FC = () => {
   // 检查文件类型是否已有内置的打开按钮（Word、PPT、PDF、Excel 组件内部已提供）
   // Check if file type already has built-in open button
   // (Word, PPT, PDF, Excel components provide their own)
-  const hasBuiltInOpenButton = (FILE_TYPES_WITH_BUILTIN_OPEN as readonly string[]).includes(contentType);
+  const _hasBuiltInOpenButton = (FILE_TYPES_WITH_BUILTIN_OPEN as readonly string[]).includes(contentType);
 
   // 对所有有 filePath 的文件显示"在系统中打开"按钮（统一在工具栏显示）
   // Show "Open in System" button for all files with filePath (unified in toolbar)
   const showOpenInSystemButton = Boolean(metadata?.filePath);
+  const isPythonCode = contentType === 'code' && (metadata?.language === 'python' || metadata?.language === 'py' || metadata?.fileName?.toLowerCase().endsWith('.py') || metadata?.filePath?.toLowerCase().endsWith('.py'));
+
+  const handleRunPython = useCallback(() => {
+    const filePath = metadata?.filePath;
+    if (!filePath) {
+      messageApi.error(t('messages.operationFailed', { defaultValue: 'Operation failed' }));
+      return;
+    }
+
+    // Close preview panel first (collapse)
+    collapsePreview();
+
+    // Attach file to current conversation sendbox (only active sendbox will receive)
+    const normalizePath = (p: string) => p.replace(/\\/g, '/');
+    const normalizedFilePath = normalizePath(filePath);
+    const normalizedWorkspace = metadata?.workspace ? normalizePath(metadata.workspace) : undefined;
+    const relativePath = normalizedWorkspace && normalizedFilePath.startsWith(`${normalizedWorkspace}/`) ? normalizedFilePath.slice(normalizedWorkspace.length + 1) : undefined;
+
+    const payload: FileOrFolderItem = {
+      path: filePath,
+      name: metadata?.fileName || normalizedFilePath.split('/').pop() || filePath,
+      isFile: true,
+      relativePath,
+    };
+
+    const items: Array<string | FileOrFolderItem> = [payload];
+    emitter.emit('gemini.selected.file.append', items);
+    emitter.emit('acp.selected.file.append', items);
+    emitter.emit('codex.selected.file.append', items);
+
+    // Insert prompt and auto-send
+    addToSendBox('检查并创建 Python 虚拟环境，运行一下这个脚本，输出结果，并对结果进行解读。');
+    // Wait a tick for: (1) sendbox input state to update; (2) file selection append (Codex has a small internal delay)
+    setTimeout(() => {
+      submitSendBox();
+    }, 20);
+  }, [addToSendBox, collapsePreview, metadata?.filePath, messageApi, submitSendBox, t]);
+
+  const rightExtra = useMemo(() => {
+    const runButton = isPythonCode ? (
+      <div className='flex items-center gap-4px px-8px py-4px rd-4px cursor-pointer hover:bg-bg-3 transition-colors' onClick={handleRunPython} title={t('preview.runPython', { defaultValue: 'Run Python' })}>
+        <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' className='text-t-secondary'>
+          <polygon points='6 4 20 12 6 20 6 4' />
+        </svg>
+        <span className='text-12px text-t-secondary'>{t('preview.runPython', { defaultValue: 'Run' })}</span>
+      </div>
+    ) : null;
+
+    if (!runButton) return toolbarExtras?.right;
+    return (
+      <>
+        {runButton}
+        {toolbarExtras?.right}
+      </>
+    );
+  }, [handleRunPython, isPythonCode, t, toolbarExtras?.right]);
 
   // 下载文件到本地 / Download file to local system
   const handleDownload = useCallback(async () => {
@@ -587,7 +645,7 @@ const PreviewPanel: React.FC = () => {
             inspectMode={inspectMode}
             onInspectModeToggle={() => setInspectMode(!inspectMode)}
             leftExtra={toolbarExtras?.left}
-            rightExtra={toolbarExtras?.right}
+            rightExtra={rightExtra}
           />
         )}
 

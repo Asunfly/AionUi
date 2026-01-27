@@ -371,6 +371,49 @@ Issue와 Pull Request를 제출해 주세요!
 4. 브랜치에 푸시 (`git push origin feature/AmazingFeature`)
 5. Pull Request 열기
 
+#### 🧑‍💻 로컬 개발(기여자용)
+
+**사전 준비**
+
+- Node.js LTS(권장 20/22/24) + npm
+- macOS: Xcode Command Line Tools 설치(`better-sqlite3` 등 네이티브 모듈 필요): `xcode-select --install`
+
+**의존성 설치**
+
+```bash
+# 의존성 설치(이 저장소는 package-lock.json 사용)
+npm ci
+
+# 네이티브 모듈 빌드가 실패하면(macOS/Linux) Electron 버전에 맞게 재빌드
+npx electron-builder install-app-deps
+
+# 네트워크 이슈가 있으면 미러 레지스트리를 시도하세요:
+# npm ci --registry=https://registry.npmmirror.com
+```
+
+**실행**
+
+```bash
+npm start              # 데스크톱 GUI(Electron)
+npm run webui          # WebUI 모드(창 없음)
+npm run webui:remote   # LAN에서 WebUI 접속
+```
+
+**포트**
+
+- Renderer dev server: `3000`(`AIONUI_DEV_PORT` / `DEV_SERVER_PORT` / `PORT`로 변경)
+- Forge webpack logger: `9000`(`AIONUI_LOGGER_PORT` / `DEV_LOGGER_PORT` / `LOGGER_PORT`로 변경)
+- WebUI 서버: `25808`(`--port` / `AIONUI_PORT`로 변경)
+
+**디버깅**
+
+- VS Code 설정: `.vscode/launch.json`
+- 예: `npm start -- --inspect=9229`
+
+**리포지토리 참고**
+
+- `patch-package`(`postinstall`에서 실행)를 사용해 Forge 개발 logger가 `127.0.0.1`에 바인딩되도록 패치를 적용합니다: `patches/@electron-forge+web-multi-logger+7.11.1.patch`.
+
 ---
 
 ## 📄 라이선스

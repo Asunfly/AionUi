@@ -50,9 +50,10 @@ const SendBox: React.FC<{
   const measurementCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const latestInputRef = useLatestRef(input);
   const setInputRef = useLatestRef(setInput);
+  const sendInFlightRef = useRef<boolean>(false);
 
   // 集成预览面板的"添加到聊天"功能 / Integrate preview panel's "Add to chat" functionality
-  const { setSendBoxHandler, domSnippets, removeDomSnippet, clearDomSnippets } = usePreviewContext();
+  const { setSendBoxHandler, setSendBoxSubmitHandler, domSnippets, removeDomSnippet, clearDomSnippets } = usePreviewContext();
 
   // 注册处理器以接收来自预览面板的文本 / Register handler to receive text from preview panel
   useEffect(() => {
@@ -197,14 +198,15 @@ const SendBox: React.FC<{
     setIsInputFocused(false);
   }, []);
 
-  const sendMessageHandler = () => {
-    if (loading || isLoading) {
+  const sendMessageHandler = useCallback(() => {
+    if (loading || isLoading || sendInFlightRef.current) {
       message.warning(t('messages.conversationInProgress'));
       return;
     }
     if (!input.trim() && domSnippets.length === 0) {
       return;
     }
+    sendInFlightRef.current = true;
     setIsLoading(true);
 
     // 构建消息内容：如果有 DOM 片段，附加完整 HTML / Build message: if has DOM snippets, append full HTML
@@ -221,9 +223,18 @@ const SendBox: React.FC<{
       })
       .catch(() => {})
       .finally(() => {
+        sendInFlightRef.current = false;
         setIsLoading(false);
       });
-  };
+  }, [loading, isLoading, input, domSnippets, message, onSend, setInput, t, clearDomSnippets]);
+
+  // Allow preview panel to trigger send programmatically
+  useEffect(() => {
+    setSendBoxSubmitHandler(sendMessageHandler);
+    return () => {
+      setSendBoxSubmitHandler(null);
+    };
+  }, [sendMessageHandler, setSendBoxSubmitHandler]);
 
   const stopHandler = async () => {
     if (!onStop) return;

@@ -371,6 +371,49 @@ brew install aionui
 4. Empuja la rama (`git push origin feature/AmazingFeature`)
 5. Abre un Pull Request
 
+#### 🧑‍💻 Desarrollo local (para contribuidores)
+
+**Requisitos previos**
+
+- Node.js LTS (recomendado 20/22/24) + npm
+- macOS: Xcode Command Line Tools (necesario para módulos nativos como `better-sqlite3`): `xcode-select --install`
+
+**Instalación**
+
+```bash
+# Instala dependencias (este repo usa package-lock.json)
+npm ci
+
+# Si fallan los módulos nativos (macOS/Linux), reconstruye para Electron
+npx electron-builder install-app-deps
+
+# Si tienes problemas de red, prueba un registry espejo:
+# npm ci --registry=https://registry.npmmirror.com
+```
+
+**Ejecutar**
+
+```bash
+npm start              # GUI de escritorio (Electron)
+npm run webui          # Modo WebUI (sin ventana)
+npm run webui:remote   # WebUI en la red local
+```
+
+**Puertos**
+
+- Dev server del renderer: `3000` (override: `AIONUI_DEV_PORT` / `DEV_SERVER_PORT` / `PORT`)
+- Logger de Forge webpack: `9000` (override: `AIONUI_LOGGER_PORT` / `DEV_LOGGER_PORT` / `LOGGER_PORT`)
+- Servidor WebUI: `25808` (override: `--port` / `AIONUI_PORT`)
+
+**Depuración**
+
+- Configuraciones de VS Code: `.vscode/launch.json`
+- Ejemplo: `npm start -- --inspect=9229`
+
+**Nota del repositorio**
+
+- Se usa `patch-package` (vía `postinstall`) para que el logger de dev de Forge se vincule a `127.0.0.1`: `patches/@electron-forge+web-multi-logger+7.11.1.patch`.
+
 ---
 
 ## 📄 Licencia

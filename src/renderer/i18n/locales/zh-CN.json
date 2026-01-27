@@ -127,6 +127,7 @@
     "downloadCode": "下载 {{language}} 文件",
     "downloadDiff": "下载 Diff 文件",
     "addToChat": "添加到会话",
+    "runPython": "运行",
     "openSplitScreen": "开启分屏",
     "closeSplitScreen": "关闭分屏",
     "edit": "编辑",

@@ -50,6 +50,9 @@ export interface PreviewContextValue {
 
   // 预览面板操作 / Preview panel operations
   openPreview: (content: string, type: PreviewContentType, metadata?: PreviewMetadata) => void;
+  // 收起预览面板，但保留 tabs（便于后续快速恢复）
+  // Collapse preview panel but keep tabs for quick restore
+  collapsePreview: () => void;
   closePreview: () => void;
   closeTab: (tabId: string) => void;
   switchTab: (tabId: string) => void;
@@ -61,6 +64,8 @@ export interface PreviewContextValue {
   // 发送框集成 / Sendbox integration
   addToSendBox: (text: string) => void;
   setSendBoxHandler: (handler: ((text: string) => void) | null) => void;
+  setSendBoxSubmitHandler: (handler: (() => void) | null) => void;
+  submitSendBox: () => void;
 
   // DOM 片段管理 / DOM snippet management
   domSnippets: DomSnippet[];
@@ -105,6 +110,7 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [activeTabId, setActiveTabId] = useState<string | null>(persistedState.activeTabId);
   // const [sendBoxHandler, setSendBoxHandlerState] = useState<((text: string) => void) | null>(null);
   const sendBoxHandler = useRef<((text: string) => void) | null>(null);
+  const sendBoxSubmitHandler = useRef<(() => void) | null>(null);
   const [domSnippets, setDomSnippets] = useState<DomSnippet[]>([]);
 
   // 持久化状态到 localStorage / Persist state to localStorage
@@ -271,6 +277,10 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setActiveTabId(null);
   }, []);
 
+  const collapsePreview = useCallback(() => {
+    setIsOpen(false);
+  }, []);
+
   const closeTab = useCallback(
     (tabId: string) => {
       setTabs((prevTabs) => {
@@ -397,6 +407,18 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
     sendBoxHandler.current = handler;
   }, []);
 
+  const setSendBoxSubmitHandler = useCallback((handler: (() => void) | null) => {
+    sendBoxSubmitHandler.current = handler;
+  }, []);
+
+  const submitSendBox = useCallback(() => {
+    try {
+      sendBoxSubmitHandler.current?.();
+    } catch (error) {
+      console.error('[PreviewContext] Failed to submit sendbox:', error);
+    }
+  }, []);
+
   // DOM 片段管理函数 / DOM snippet management functions
   // 只保留最新的一个片段 / Only keep the latest snippet
   const addDomSnippet = useCallback((tag: string, html: string) => {
@@ -511,8 +533,31 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [openPreview]);
 
   const previewContextValue = useMemo(() => {
-    return { isOpen, tabs, activeTabId, activeTab, openPreview, closePreview, closeTab, switchTab: setActiveTabId, updateContent, saveContent, findPreviewTab, closePreviewByIdentity, addToSendBox, setSendBoxHandler, domSnippets, addDomSnippet, removeDomSnippet, clearDomSnippets };
-  }, [isOpen, tabs, activeTabId, activeTab, openPreview, closePreview, closeTab, setActiveTabId, updateContent, saveContent, findPreviewTab, closePreviewByIdentity, addToSendBox, setSendBoxHandler, domSnippets, addDomSnippet, removeDomSnippet, clearDomSnippets]);
+    return {
+      isOpen,
+      tabs,
+      activeTabId,
+      activeTab,
+      openPreview,
+      collapsePreview,
+      closePreview,
+      closeTab,
+      switchTab: setActiveTabId,
+      updateContent,
+      saveContent,
+      findPreviewTab,
+      closePreviewByIdentity,
+      addToSendBox,
+      setSendBoxHandler,
+      setSendBoxSubmitHandler,
+      submitSendBox,
+      domSnippets,
+      addDomSnippet,
+      removeDomSnippet,
+      clearDomSnippets,
+    };
+    // eslint-disable-next-line max-len
+  }, [isOpen, tabs, activeTabId, activeTab, openPreview, collapsePreview, closePreview, closeTab, setActiveTabId, updateContent, saveContent, findPreviewTab, closePreviewByIdentity, addToSendBox, setSendBoxHandler, setSendBoxSubmitHandler, submitSendBox, domSnippets, addDomSnippet, removeDomSnippet, clearDomSnippets]);
 
   return <PreviewContext.Provider value={previewContextValue}>{children}</PreviewContext.Provider>;
 };

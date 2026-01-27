@@ -373,6 +373,49 @@ Welcome to submit Issues and Pull Requests!
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
+#### 🧑‍💻 Local Development (for contributors)
+
+**Prerequisites**
+
+- Node.js LTS (recommended 20/22/24) + npm
+- macOS: Xcode Command Line Tools (required by native modules like `better-sqlite3`): `xcode-select --install`
+
+**Install**
+
+```bash
+# Install dependencies (this repo uses package-lock.json)
+npm ci
+
+# If native modules fail to build (macOS/Linux), rebuild for Electron
+npx electron-builder install-app-deps
+
+# If you have network issues, try a mirror registry:
+# npm ci --registry=https://registry.npmmirror.com
+```
+
+**Run**
+
+```bash
+npm start              # Desktop GUI (Electron)
+npm run webui          # WebUI mode (headless)
+npm run webui:remote   # WebUI on LAN
+```
+
+**Ports**
+
+- Renderer dev server: `3000` (override: `AIONUI_DEV_PORT` / `DEV_SERVER_PORT` / `PORT`)
+- Forge webpack logger: `9000` (override: `AIONUI_LOGGER_PORT` / `DEV_LOGGER_PORT` / `LOGGER_PORT`)
+- WebUI server: `25808` (override: `--port` / `AIONUI_PORT`)
+
+**Debugging**
+
+- VS Code launch configs: `.vscode/launch.json`
+- Example: `npm start -- --inspect=9229`
+
+**Repository note**
+
+- `patch-package` is used (via `postinstall`) to make Forge’s dev logger bind to `127.0.0.1` for safety and compatibility: `patches/@electron-forge+web-multi-logger+7.11.1.patch`.
+
 ---
 
 ## 📄 License

@@ -371,6 +371,49 @@ IssueとPull Requestの提出を歓迎します！
 4. ブランチにプッシュ (`git push origin feature/AmazingFeature`)
 5. Pull Requestを開く
 
+#### 🧑‍💻 ローカル開発（貢献者向け）
+
+**前提条件**
+
+- Node.js LTS（推奨 20/22/24）+ npm
+- macOS：Xcode Command Line Tools（`better-sqlite3` などのネイティブ依存に必要）：`xcode-select --install`
+
+**依存関係のインストール**
+
+```bash
+# 依存関係をインストール（このリポジトリは package-lock.json を使用）
+npm ci
+
+# ネイティブモジュールのビルドに失敗する場合（macOS/Linux）
+npx electron-builder install-app-deps
+
+# ネットワークが不安定な場合はミラーも試せます：
+# npm ci --registry=https://registry.npmmirror.com
+```
+
+**起動**
+
+```bash
+npm start              # デスクトップ GUI（Electron）
+npm run webui          # WebUI モード（ウィンドウなし）
+npm run webui:remote   # LAN で WebUI を公開
+```
+
+**ポート**
+
+- Renderer dev server：`3000`（`AIONUI_DEV_PORT` / `DEV_SERVER_PORT` / `PORT` で上書き）
+- Forge webpack logger：`9000`（`AIONUI_LOGGER_PORT` / `DEV_LOGGER_PORT` / `LOGGER_PORT` で上書き）
+- WebUI サーバー：`25808`（`--port` / `AIONUI_PORT` で上書き）
+
+**デバッグ**
+
+- VS Code 設定：`.vscode/launch.json`
+- 例：`npm start -- --inspect=9229`
+
+**リポジトリ注記**
+
+- `patch-package`（`postinstall` で実行）を使い、Forge の開発 logger を `127.0.0.1` にバインドするパッチを適用します：`patches/@electron-forge+web-multi-logger+7.11.1.patch`。
+
 ---
 
 ## 📄 ライセンス

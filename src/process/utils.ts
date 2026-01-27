@@ -298,18 +298,27 @@ export const copyFilesToDirectory = async (dir: string, files?: string[], skipCl
   const { cacheDir } = getSystemDir();
   const tempDir = path.join(cacheDir, 'temp');
   const copiedFiles: string[] = [];
+  const resolvedDir = path.resolve(dir);
 
   for (const file of files) {
     // 确保文件路径是绝对路径
     const absoluteFilePath = path.isAbsolute(file) ? file : path.resolve(file);
+    const resolvedFilePath = path.resolve(absoluteFilePath);
 
     // 检查源文件是否存在
     try {
-      await fs.access(absoluteFilePath);
+      await fs.access(resolvedFilePath);
     } catch (error) {
       console.warn(`[AionUi] Source file does not exist, skipping: ${absoluteFilePath}`);
       console.warn(`[AionUi] Original path: ${file}`);
       // 跳过不存在的文件，而不是抛出错误
+      continue;
+    }
+
+    // 如果文件本身已经在目标工作空间内，则无需复制，直接返回原路径
+    // If file is already inside the workspace directory, skip copying and return original path
+    if (resolvedFilePath.startsWith(`${resolvedDir}${path.sep}`)) {
+      copiedFiles.push(resolvedFilePath);
       continue;
     }
 

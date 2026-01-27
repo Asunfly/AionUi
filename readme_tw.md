@@ -371,6 +371,49 @@ brew install aionui
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 開啟 Pull Request
 
+#### 🧑‍💻 本機開發（貢獻者）
+
+**前置需求**
+
+- Node.js LTS（建議 20/22/24）+ npm
+- macOS：安裝 Xcode Command Line Tools（`better-sqlite3` 等原生模組需要）：`xcode-select --install`
+
+**安裝依賴**
+
+```bash
+# 安裝依賴（本倉庫使用 package-lock.json）
+npm ci
+
+# 若原生模組編譯失敗（macOS/Linux），依 Electron 版本重建
+npx electron-builder install-app-deps
+
+# 若網路不穩，可暫時使用鏡像：
+# npm ci --registry=https://registry.npmmirror.com
+```
+
+**啟動**
+
+```bash
+npm start              # 桌面 GUI（Electron）
+npm run webui          # WebUI 模式（不彈窗）
+npm run webui:remote   # WebUI 區網存取
+```
+
+**埠號**
+
+- Renderer dev server：`3000`（可用 `AIONUI_DEV_PORT` / `DEV_SERVER_PORT` / `PORT` 覆蓋）
+- Forge webpack logger：`9000`（可用 `AIONUI_LOGGER_PORT` / `DEV_LOGGER_PORT` / `LOGGER_PORT` 覆蓋）
+- WebUI 服務：`25808`（可用 `--port` / `AIONUI_PORT` 覆蓋）
+
+**除錯**
+
+- VS Code 啟動設定：`.vscode/launch.json`
+- 例如：`npm start -- --inspect=9229`
+
+**倉庫說明**
+
+- 使用 `patch-package`（於 `postinstall` 執行）讓 Forge 的開發 logger 綁定到 `127.0.0.1`：`patches/@electron-forge+web-multi-logger+7.11.1.patch`。
+
 ### 🙏 特別感謝
 
 <table>
