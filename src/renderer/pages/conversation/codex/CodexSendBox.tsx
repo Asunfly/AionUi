@@ -137,6 +137,7 @@ const CodexSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id }
       // If there's existing content, add newline and new text; otherwise just set the text
       const newContent = content ? `${content}\n${text}` : text;
       setContentRef.current(newContent);
+      return newContent;
     };
     setSendBoxHandler(handler);
   }, [setSendBoxHandler, content]);
@@ -218,6 +219,7 @@ const CodexSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id }
       if (merged !== atPathRef.current) {
         setAtPath(merged as Array<string | FileOrFolderItem>);
       }
+      emitter.emit('codex.selected.file.appended', merged as Array<string | FileOrFolderItem>);
     }, 10);
   });
 
