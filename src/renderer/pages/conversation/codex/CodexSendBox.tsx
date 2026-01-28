@@ -219,6 +219,7 @@ const CodexSendBox: React.FC<{ conversation_id: string }> = ({ conversation_id }
       if (merged !== atPathRef.current) {
         setAtPath(merged as Array<string | FileOrFolderItem>);
       }
+      emitter.emit('codex.selected.file.appended', merged as Array<string | FileOrFolderItem>);
     }, 10);
   });
 

@@ -75,6 +75,32 @@ const PreviewPanel: React.FC = () => {
     updateContent,
   });
 
+  const waitForFileSelectionApplied = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const handler = (_items: Array<string | FileOrFolderItem>) => {
+        finish();
+      };
+      const timeout = setTimeout(finish, 100);
+      const cleanup = () => {
+        clearTimeout(timeout);
+        emitter.off('gemini.selected.file.appended', handler);
+        emitter.off('acp.selected.file.appended', handler);
+        emitter.off('codex.selected.file.appended', handler);
+      };
+
+      emitter.on('gemini.selected.file.appended', handler);
+      emitter.on('acp.selected.file.appended', handler);
+      emitter.on('codex.selected.file.appended', handler);
+    });
+  }, []);
+
   usePreviewKeyboardShortcuts({
     isDirty: activeTab?.isDirty,
     onSave: () => void saveContent(),
@@ -262,7 +288,7 @@ const PreviewPanel: React.FC = () => {
   const showOpenInSystemButton = Boolean(metadata?.filePath);
   const isPythonCode = contentType === 'code' && (metadata?.language === 'python' || metadata?.language === 'py' || metadata?.fileName?.toLowerCase().endsWith('.py') || metadata?.filePath?.toLowerCase().endsWith('.py'));
 
-  const handleRunPython = useCallback(() => {
+  const handleRunPython = useCallback(async () => {
     const filePath = metadata?.filePath;
     if (!filePath) {
       messageApi.error(t('messages.operationFailed', { defaultValue: 'Operation failed' }));
@@ -293,8 +319,9 @@ const PreviewPanel: React.FC = () => {
     // Insert prompt and auto-send
     const prompt = '检查并创建 Python 虚拟环境，运行一下这个脚本，输出结果，并对结果进行解读。';
     const updatedValue = addToSendBox(prompt);
+    await waitForFileSelectionApplied();
     submitSendBox(updatedValue ?? prompt);
-  }, [addToSendBox, collapsePreview, metadata?.filePath, messageApi, submitSendBox, t]);
+  }, [addToSendBox, collapsePreview, metadata?.filePath, messageApi, submitSendBox, t, waitForFileSelectionApplied]);
 
   const rightExtra = useMemo(() => {
     const runButton = isPythonCode ? (

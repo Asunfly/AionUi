@@ -398,6 +398,7 @@ const AcpSendBox: React.FC<{
     if (merged !== atPathRef.current) {
       setAtPath(merged as Array<string | FileOrFolderItem>);
     }
+    emitter.emit('acp.selected.file.appended', merged as Array<string | FileOrFolderItem>);
   });
 
   // 停止会话处理函数 Stop conversation handler
