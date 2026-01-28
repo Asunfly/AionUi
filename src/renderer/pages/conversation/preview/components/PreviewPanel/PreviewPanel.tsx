@@ -291,11 +291,9 @@ const PreviewPanel: React.FC = () => {
     emitter.emit('codex.selected.file.append', items);
 
     // Insert prompt and auto-send
-    addToSendBox('检查并创建 Python 虚拟环境，运行一下这个脚本，输出结果，并对结果进行解读。');
-    // Wait a tick for: (1) sendbox input state to update; (2) file selection append (Codex has a small internal delay)
-    setTimeout(() => {
-      submitSendBox();
-    }, 20);
+    const prompt = '检查并创建 Python 虚拟环境，运行一下这个脚本，输出结果，并对结果进行解读。';
+    const updatedValue = addToSendBox(prompt);
+    submitSendBox(updatedValue ?? prompt);
   }, [addToSendBox, collapsePreview, metadata?.filePath, messageApi, submitSendBox, t]);
 
   const rightExtra = useMemo(() => {

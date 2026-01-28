@@ -62,10 +62,10 @@ export interface PreviewContextValue {
   closePreviewByIdentity: (type: PreviewContentType, content?: string, metadata?: PreviewMetadata) => void; // 根据内容关闭指定 tab
 
   // 发送框集成 / Sendbox integration
-  addToSendBox: (text: string) => void;
-  setSendBoxHandler: (handler: ((text: string) => void) | null) => void;
-  setSendBoxSubmitHandler: (handler: (() => void) | null) => void;
-  submitSendBox: () => void;
+  addToSendBox: (text: string) => string | null;
+  setSendBoxHandler: (handler: ((text: string) => string | null) | null) => void;
+  setSendBoxSubmitHandler: (handler: ((messageOverride?: string) => void) | null) => void;
+  submitSendBox: (messageOverride?: string) => void;
 
   // DOM 片段管理 / DOM snippet management
   domSnippets: DomSnippet[];
@@ -109,8 +109,8 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [tabs, setTabs] = useState<PreviewTab[]>(persistedState.tabs);
   const [activeTabId, setActiveTabId] = useState<string | null>(persistedState.activeTabId);
   // const [sendBoxHandler, setSendBoxHandlerState] = useState<((text: string) => void) | null>(null);
-  const sendBoxHandler = useRef<((text: string) => void) | null>(null);
-  const sendBoxSubmitHandler = useRef<(() => void) | null>(null);
+  const sendBoxHandler = useRef<((text: string) => string | null) | null>(null);
+  const sendBoxSubmitHandler = useRef<((messageOverride?: string) => void) | null>(null);
   const [domSnippets, setDomSnippets] = useState<DomSnippet[]>([]);
 
   // 持久化状态到 localStorage / Persist state to localStorage
@@ -399,21 +399,22 @@ export const PreviewProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const addToSendBox = useCallback((text: string) => {
     if (sendBoxHandler.current) {
-      sendBoxHandler.current(text);
+      return sendBoxHandler.current(text);
     }
+    return null;
   }, []);
 
-  const setSendBoxHandler = useCallback((handler: ((text: string) => void) | null) => {
+  const setSendBoxHandler = useCallback((handler: ((text: string) => string | null) | null) => {
     sendBoxHandler.current = handler;
   }, []);
 
-  const setSendBoxSubmitHandler = useCallback((handler: (() => void) | null) => {
+  const setSendBoxSubmitHandler = useCallback((handler: ((messageOverride?: string) => void) | null) => {
     sendBoxSubmitHandler.current = handler;
   }, []);
 
-  const submitSendBox = useCallback(() => {
+  const submitSendBox = useCallback((messageOverride?: string) => {
     try {
-      sendBoxSubmitHandler.current?.();
+      sendBoxSubmitHandler.current?.(messageOverride);
     } catch (error) {
       console.error('[PreviewContext] Failed to submit sendbox:', error);
     }

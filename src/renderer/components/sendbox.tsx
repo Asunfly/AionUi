@@ -61,6 +61,7 @@ const SendBox: React.FC<{
       const base = latestInputRef.current;
       const newValue = base ? `${base}\n\n${text}` : text;
       setInputRef.current(newValue);
+      return newValue;
     };
     setSendBoxHandler(handler);
     return () => {
@@ -198,35 +199,39 @@ const SendBox: React.FC<{
     setIsInputFocused(false);
   }, []);
 
-  const sendMessageHandler = useCallback(() => {
-    if (loading || isLoading || sendInFlightRef.current) {
-      message.warning(t('messages.conversationInProgress'));
-      return;
-    }
-    if (!input.trim() && domSnippets.length === 0) {
-      return;
-    }
-    sendInFlightRef.current = true;
-    setIsLoading(true);
+  const sendMessageHandler = useCallback(
+    (messageOverride?: string) => {
+      if (loading || isLoading || sendInFlightRef.current) {
+        message.warning(t('messages.conversationInProgress'));
+        return;
+      }
+      const effectiveInput = messageOverride ?? input;
+      if (!effectiveInput.trim() && domSnippets.length === 0) {
+        return;
+      }
+      sendInFlightRef.current = true;
+      setIsLoading(true);
 
-    // 构建消息内容：如果有 DOM 片段，附加完整 HTML / Build message: if has DOM snippets, append full HTML
-    let finalMessage = input;
-    if (domSnippets.length > 0) {
-      const snippetsHtml = domSnippets.map((s) => `\n\n---\nDOM Snippet (${s.tag}):\n\`\`\`html\n${s.html}\n\`\`\``).join('');
-      finalMessage = input + snippetsHtml;
-    }
+      // 构建消息内容：如果有 DOM 片段，附加完整 HTML / Build message: if has DOM snippets, append full HTML
+      let finalMessage = effectiveInput;
+      if (domSnippets.length > 0) {
+        const snippetsHtml = domSnippets.map((s) => `\n\n---\nDOM Snippet (${s.tag}):\n\`\`\`html\n${s.html}\n\`\`\``).join('');
+        finalMessage = effectiveInput + snippetsHtml;
+      }
 
-    onSend(finalMessage)
-      .then(() => {
-        setInput('');
-        clearDomSnippets(); // 发送后清除 DOM 片段 / Clear DOM snippets after sending
-      })
-      .catch(() => {})
-      .finally(() => {
-        sendInFlightRef.current = false;
-        setIsLoading(false);
-      });
-  }, [loading, isLoading, input, domSnippets, message, onSend, setInput, t, clearDomSnippets]);
+      onSend(finalMessage)
+        .then(() => {
+          setInput('');
+          clearDomSnippets(); // 发送后清除 DOM 片段 / Clear DOM snippets after sending
+        })
+        .catch(() => {})
+        .finally(() => {
+          sendInFlightRef.current = false;
+          setIsLoading(false);
+        });
+    },
+    [loading, isLoading, input, domSnippets, message, onSend, setInput, t, clearDomSnippets]
+  );
 
   // Allow preview panel to trigger send programmatically
   useEffect(() => {
