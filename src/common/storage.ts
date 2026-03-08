@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ICloudBackupSettings } from '@/common/types/backup';
 import type { AcpBackend, AcpBackendAll, AcpBackendConfig } from '@/types/acpTypes';
 import { storage } from '@office-ai/platform';
 
@@ -115,6 +116,7 @@ export interface IConfigStorageRefer {
     customAgentId?: string;
     name?: string;
   };
+  'backup.cloud'?: ICloudBackupSettings;
 }
 
 export interface IEnvStorageRefer {

@@ -18,6 +18,7 @@ import { useDeepLink } from './hooks/useDeepLink';
 import { useDirectorySelection } from './hooks/useDirectorySelection';
 import { useMultiAgentDetection } from './hooks/useMultiAgentDetection';
 import { processCustomCss } from './utils/customCssProcessor';
+import { startCloudBackupScheduler } from '@/renderer/services/cloudBackupScheduler';
 import { cleanupSiderTooltips } from './utils/siderTooltip';
 import { isElectronDesktop } from './utils/platform';
 import { computeCssSyncDecision, resolveCssByActiveTheme } from './utils/themeCssSync';
@@ -258,6 +259,10 @@ const Layout: React.FC<{
       }
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    void startCloudBackupScheduler();
   }, []);
 
   const siderWidth = isMobile ? Math.max(MOBILE_SIDER_MIN_WIDTH, Math.min(MOBILE_SIDER_MAX_WIDTH, Math.round(viewportWidth * MOBILE_SIDER_WIDTH_RATIO))) : DEFAULT_SIDER_WIDTH;

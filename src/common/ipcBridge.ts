@@ -5,6 +5,7 @@
  */
 
 import type { IConfirmation } from '@/common/chatLib';
+import type { IBackupConnectionResult, IBackupManifest, IBackupTaskEvent, ICloudBackupSettings, IRemoteBackupFile } from '@/common/types/backup';
 import { bridge } from '@office-ai/platform';
 import type { OpenDialogOptions } from 'electron';
 import type { McpSource } from '../process/services/mcpServices/McpProtocol';
@@ -104,6 +105,16 @@ export const application = {
   logStream: bridge.buildEmitter<{ level: 'log' | 'warn' | 'error'; tag: string; message: string; data?: unknown }>('app.log-stream'),
   // DevTools state change notification
   devToolsStateChanged: bridge.buildEmitter<{ isOpen: boolean }>('app.devtools-state-changed'),
+};
+
+export const backup = {
+  getSuggestedFileName: bridge.buildProvider<string, { remark?: string }>('backup.get-suggested-file-name'),
+  checkRemoteConnection: bridge.buildProvider<IBridgeResponse<IBackupConnectionResult>, { settings: ICloudBackupSettings }>('backup.check-remote-connection'),
+  runRemoteBackup: bridge.buildProvider<IBridgeResponse<IRemoteBackupFile>, { settings: ICloudBackupSettings; fileName?: string; automatic?: boolean; requestId?: string }>('backup.run-remote-backup'),
+  cancelTask: bridge.buildProvider<IBridgeResponse<{ canceled: boolean }>, { requestId?: string } | undefined>('backup.cancel-task'),
+  listRemotePackages: bridge.buildProvider<IBridgeResponse<IRemoteBackupFile[]>, { settings: ICloudBackupSettings }>('backup.list-remote-packages'),
+  restoreRemotePackage: bridge.buildProvider<IBridgeResponse<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }>, { settings: ICloudBackupSettings; fileName: string }>('backup.restore-remote-package'),
+  taskStatus: bridge.buildEmitter<IBackupTaskEvent>('backup.task-status'),
 };
 
 // Manual (opt-in) updates via GitHub Releases

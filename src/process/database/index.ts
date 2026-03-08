@@ -133,6 +133,13 @@ export class AionUIDatabase {
   }
 
   /**
+   * Create a consistent SQLite backup snapshot on disk.
+   */
+  async backup(destinationPath: string): Promise<void> {
+    await this.db.backup(destinationPath);
+  }
+
+  /**
    * ==================
    * User operations
    * 用户操作
