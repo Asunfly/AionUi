@@ -7,7 +7,7 @@
 import { ipcBridge } from '@/common';
 import type { IBackupTaskEvent, ICloudBackupSettings } from '@/common/types/backup';
 import { AUTO_BACKUP_INTERVAL_OPTIONS, NUTSTORE_HELP_URL, NUTSTORE_WEBDAV_HOST } from '@/common/types/backup';
-import { withDefaultCloudBackupSettings } from '@/common/utils/backup';
+import { isCloudBackupConfigured, normalizeRemotePath, withDefaultCloudBackupSettings } from '@/common/utils/backup';
 import LanguageSwitcher from '@/renderer/components/LanguageSwitcher';
 import AionScrollArea from '@/renderer/components/base/AionScrollArea';
 import CloudBackupRemarkModal from '@/renderer/components/SettingsModal/contents/CloudBackupRemarkModal';
@@ -16,7 +16,7 @@ import { cancelCloudBackupTask, checkCloudBackupConnection, formatCloudBackupErr
 import { refreshCloudBackupScheduler } from '@/renderer/services/cloudBackupScheduler';
 import { iconColors } from '@/renderer/theme/colors';
 import { isElectronDesktop } from '@/renderer/utils/platform';
-import { Alert, Button, Form, Input, InputNumber, Message, Modal, Select, Switch, Tooltip } from '@arco-design/web-react';
+import { Alert, Button, Collapse, Form, Input, Message, Modal, Select, Switch, Tooltip } from '@arco-design/web-react';
 import { FolderOpen } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,6 +27,8 @@ const intervalOptions = AUTO_BACKUP_INTERVAL_OPTIONS.map((value) => ({
   value,
   labelKey: value === 0 ? 'settings.backup.interval.off' : `settings.backup.interval.${value}h`,
 }));
+
+const maxBackupCountOptions = [0, 5, 10, 20, 50, 100] as const;
 
 const DirInputItem: React.FC<{
   label: string;
@@ -88,13 +90,82 @@ const PreferenceRow: React.FC<{
 
 const BackupField: React.FC<{
   label: string;
+  description?: React.ReactNode;
+  alignStart?: boolean;
   children: React.ReactNode;
-}> = ({ label, children }) => (
-  <div className='grid grid-cols-[160px_1fr] items-center gap-12px'>
-    <div className='text-13px text-[var(--color-text-2)]'>{label}</div>
+}> = ({ label, description, alignStart = false, children }) => (
+  <div className={`grid gap-12px md:grid-cols-[176px_1fr] ${alignStart ? 'items-start' : 'items-center'}`}>
+    <div>
+      <div className='text-13px text-[var(--color-text-2)]'>{label}</div>
+      {description && <div className='mt-4px text-12px leading-5 text-[var(--color-text-3)]'>{description}</div>}
+    </div>
     <div>{children}</div>
   </div>
 );
+
+const BackupSectionCard: React.FC<{
+  title: string;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, description, children }) => (
+  <div className='rounded-16px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-14px py-14px md:px-16px'>
+    <div className='flex items-start justify-between gap-12px'>
+      <div>
+        <div className='text-14px font-600 text-[var(--color-text-1)]'>{title}</div>
+        {description && <div className='mt-4px text-12px leading-5 text-[var(--color-text-3)]'>{description}</div>}
+      </div>
+    </div>
+    <div className='mt-14px space-y-14px'>{children}</div>
+  </div>
+);
+
+const ProviderOptionCard: React.FC<{
+  active: boolean;
+  title: string;
+  description: string;
+  onClick: () => void;
+}> = ({ active, title, description, onClick }) => (
+  <button type='button' className={`w-full rounded-16px border border-solid px-14px py-14px text-left transition-all ${active ? 'border-[var(--color-primary-light-4)] bg-[var(--color-primary-light-1)] shadow-[0_6px_18px_rgba(64,128,255,0.12)]' : 'border-[var(--color-border-2)] bg-[var(--fill-1)] hover:border-[var(--color-primary-light-4)] hover:bg-[var(--fill-2)]'}`} onClick={onClick}>
+    <div className='flex items-center justify-between gap-12px'>
+      <div className='text-14px font-600 text-[var(--color-text-1)]'>{title}</div>
+      <span className={`inline-flex h-8px w-8px rounded-full transition-colors ${active ? 'bg-[var(--color-primary-6)]' : 'bg-[var(--color-fill-3)]'}`} />
+    </div>
+    <div className='mt-8px text-12px leading-5 text-[var(--color-text-3)]'>{description}</div>
+  </button>
+);
+
+function getStatusTone(status: NonNullable<ICloudBackupSettings['lastBackupStatus']> | 'running'): {
+  dotClass: string;
+  badgeClass: string;
+  cardClass: string;
+} {
+  switch (status) {
+    case 'success':
+      return {
+        dotClass: 'bg-[var(--color-success-6)]',
+        badgeClass: 'bg-[var(--color-success-light-1)] text-[var(--color-success-6)]',
+        cardClass: 'border-[var(--color-success-light-3)] bg-[var(--color-success-light-1)]',
+      };
+    case 'error':
+      return {
+        dotClass: 'bg-[var(--color-danger-6)]',
+        badgeClass: 'bg-[var(--color-danger-light-1)] text-[var(--color-danger-6)]',
+        cardClass: 'border-[var(--color-danger-light-3)] bg-[var(--color-danger-light-1)]',
+      };
+    case 'running':
+      return {
+        dotClass: 'bg-[var(--color-primary-6)] animate-pulse',
+        badgeClass: 'bg-[var(--color-primary-light-1)] text-[var(--color-primary-6)]',
+        cardClass: 'border-[var(--color-primary-light-4)] bg-[var(--color-primary-light-1)]',
+      };
+    default:
+      return {
+        dotClass: 'bg-[var(--color-fill-4)]',
+        badgeClass: 'bg-[var(--fill-2)] text-[var(--color-text-3)]',
+        cardClass: 'border-[var(--color-border-2)] bg-[var(--fill-1)]',
+      };
+  }
+}
 
 function formatBackupTaskText(t: ReturnType<typeof useTranslation>['t'], event: IBackupTaskEvent | null, settings: ICloudBackupSettings | null): string {
   if (event && event.task !== 'list' && event.phase !== 'success' && event.phase !== 'error') {
@@ -342,6 +413,10 @@ const SystemModalContent: React.FC = () => {
 
   const activeProvider = backupSettings?.activeProvider || 'webdav';
   const currentStatusText = formatBackupTaskText(t, backupTaskEvent, backupSettings);
+  const backupConfigured = backupSettings ? isCloudBackupConfigured(backupSettings) : false;
+  const currentProviderPath = backupSettings ? normalizeRemotePath(activeProvider === 'nutstore' ? backupSettings.nutstore.remotePath : backupSettings.webdav.remotePath) : '--';
+  const effectiveStatus = backupTaskEvent && backupTaskEvent.task !== 'list' && backupTaskEvent.phase !== 'success' && backupTaskEvent.phase !== 'error' ? 'running' : backupSettings?.lastBackupStatus || 'idle';
+  const statusTone = getStatusTone(effectiveStatus);
 
   return (
     <div className='flex flex-col h-full w-full'>
@@ -382,102 +457,138 @@ const SystemModalContent: React.FC = () => {
               <Alert type='info' content={t('settings.backup.desktopOnly')} />
             ) : (
               <div className='space-y-14px'>
-                <BackupField label={t('settings.backup.provider')}>
-                  <Select value={backupSettings.activeProvider} onChange={(value) => updateBackupSettings((current) => ({ ...current, activeProvider: value }))}>
-                    <Select.Option value='webdav'>{t('settings.backup.webdav')}</Select.Option>
-                    <Select.Option value='nutstore'>{t('settings.backup.nutstore')}</Select.Option>
-                  </Select>
-                </BackupField>
+                <div className='grid gap-10px md:grid-cols-2'>
+                  <ProviderOptionCard active={activeProvider === 'webdav'} title={t('settings.backup.webdav')} description={t('settings.backup.providerWebdavDescription')} onClick={() => updateBackupSettings((current) => ({ ...current, activeProvider: 'webdav' }))} />
+                  <ProviderOptionCard active={activeProvider === 'nutstore'} title={t('settings.backup.nutstore')} description={t('settings.backup.providerNutstoreDescription')} onClick={() => updateBackupSettings((current) => ({ ...current, activeProvider: 'nutstore' }))} />
+                </div>
 
-                {activeProvider === 'webdav' ? (
-                  <>
-                    <BackupField label={t('settings.backup.host')}>
-                      <Input value={backupSettings.webdav.host} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, host: value } }))} placeholder='https://example.com/dav' />
-                    </BackupField>
-                    <BackupField label={t('settings.backup.username')}>
-                      <Input value={backupSettings.webdav.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, username: value } }))} />
-                    </BackupField>
-                    <BackupField label={t('settings.backup.password')}>
-                      <Input.Password value={backupSettings.webdav.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, password: value } }))} />
-                    </BackupField>
-                    <BackupField label={t('settings.backup.remotePath')}>
-                      <Input value={backupSettings.webdav.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, remotePath: value } }))} placeholder='/AionUibackup' />
-                    </BackupField>
-                  </>
-                ) : (
-                  <>
-                    <BackupField label={t('settings.backup.nutstoreUrl')}>
-                      <Input value={NUTSTORE_WEBDAV_HOST} readOnly />
-                    </BackupField>
-                    <BackupField label={t('settings.backup.username')}>
-                      <Input value={backupSettings.nutstore.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, username: value } }))} />
-                    </BackupField>
-                    <BackupField label={t('settings.backup.password')}>
-                      <Input.Password value={backupSettings.nutstore.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, password: value } }))} />
-                    </BackupField>
-                    <BackupField label={t('settings.backup.remotePath')}>
-                      <Input value={backupSettings.nutstore.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, remotePath: value } }))} placeholder='/AionUibackup' />
-                    </BackupField>
-                    <Alert
-                      type='info'
-                      content={
-                        <div className='space-y-6px'>
-                          <div>{t('settings.backup.nutstorePasswordNotice')}</div>
-                          <div>{t('settings.backup.nutstoreWebdavNotice')}</div>
-                          <button type='button' className='cursor-pointer border-none bg-transparent p-0 text-left text-[var(--color-primary-6)] hover:underline' onClick={() => void ipcBridge.shell.openExternal.invoke(NUTSTORE_HELP_URL)}>
-                            {t('settings.backup.nutstoreHelpAction')}
-                          </button>
+                <div className='grid gap-14px xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]'>
+                  <div className='space-y-14px'>
+                    <BackupSectionCard title={t('settings.backup.connectionSection')} description={t('settings.backup.connectionSectionDescription')}>
+                      {activeProvider === 'webdav' ? (
+                        <>
+                          <BackupField label={t('settings.backup.host')}>
+                            <Input value={backupSettings.webdav.host} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, host: value } }))} placeholder='https://example.com/dav' />
+                          </BackupField>
+                          <BackupField label={t('settings.backup.username')}>
+                            <Input value={backupSettings.webdav.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, username: value } }))} />
+                          </BackupField>
+                          <BackupField label={t('settings.backup.password')}>
+                            <Input.Password value={backupSettings.webdav.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, password: value } }))} />
+                          </BackupField>
+                          <BackupField label={t('settings.backup.remotePath')}>
+                            <Input value={backupSettings.webdav.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, remotePath: value } }))} placeholder='/AionUibackup' />
+                          </BackupField>
+                        </>
+                      ) : (
+                        <>
+                          <BackupField label={t('settings.backup.nutstoreUrl')}>
+                            <Input value={NUTSTORE_WEBDAV_HOST} readOnly />
+                          </BackupField>
+                          <BackupField label={t('settings.backup.username')}>
+                            <Input value={backupSettings.nutstore.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, username: value } }))} />
+                          </BackupField>
+                          <BackupField label={t('settings.backup.password')} description={t('settings.backup.nutstorePasswordNotice')}>
+                            <Input.Password value={backupSettings.nutstore.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, password: value } }))} />
+                          </BackupField>
+                          <BackupField label={t('settings.backup.remotePath')}>
+                            <Input value={backupSettings.nutstore.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, remotePath: value } }))} placeholder='/AionUibackup' />
+                          </BackupField>
+                          <Alert
+                            type='info'
+                            content={
+                              <div className='space-y-6px'>
+                                <div>{t('settings.backup.nutstoreWebdavNotice')}</div>
+                                <button type='button' className='cursor-pointer border-none bg-transparent p-0 text-left text-[var(--color-primary-6)] hover:underline' onClick={() => void ipcBridge.shell.openExternal.invoke(NUTSTORE_HELP_URL)}>
+                                  {t('settings.backup.nutstoreHelpAction')}
+                                </button>
+                              </div>
+                            }
+                          />
+                        </>
+                      )}
+                    </BackupSectionCard>
+
+                    <BackupSectionCard title={t('settings.backup.policySection')} description={t('settings.backup.policySectionDescription')}>
+                      <BackupField label={t('settings.backup.autoBackupEnabled')}>
+                        <Switch checked={backupSettings.autoBackupEnabled} onChange={(checked) => updateBackupSettings((current) => ({ ...current, autoBackupEnabled: checked }))} />
+                      </BackupField>
+                      <BackupField label={t('settings.backup.autoBackupInterval')} description={t('settings.backup.autoBackupIntervalDescription')}>
+                        <Select value={backupSettings.autoBackupIntervalHours} disabled={!backupSettings.autoBackupEnabled} onChange={(value) => updateBackupSettings((current) => ({ ...current, autoBackupIntervalHours: value }))}>
+                          {intervalOptions.map((option) => (
+                            <Select.Option key={option.value} value={option.value}>
+                              {t(option.labelKey as never)}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </BackupField>
+                      <BackupField label={t('settings.backup.maxBackupCount')} description={t('settings.backup.maxBackupCountDescription')}>
+                        <Select value={backupSettings.maxBackupCount} onChange={(value) => updateBackupSettings((current) => ({ ...current, maxBackupCount: Number(value) }))}>
+                          {maxBackupCountOptions.map((option) => (
+                            <Select.Option key={option} value={option}>
+                              {option === 0 ? t('settings.backup.retentionUnlimited') : option}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </BackupField>
+                      <BackupField label={t('settings.backup.includeDefaultWorkspaceFiles')} description={t('settings.backup.defaultWorkspaceNotice')} alignStart>
+                        <Switch checked={backupSettings.includeDefaultWorkspaceFiles} onChange={(checked) => updateBackupSettings((current) => ({ ...current, includeDefaultWorkspaceFiles: checked }))} />
+                      </BackupField>
+                      <Collapse bordered={false} defaultActiveKey={[]} className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-0)] px-4px'>
+                        <Collapse.Item name='scope' header={<span className='text-13px text-[var(--color-text-2)]'>{t('settings.backup.scopeSummary')}</span>}>
+                          <div className='space-y-12px pb-4px'>
+                            <div>
+                              <div className='text-13px font-600 text-[var(--color-text-1)]'>{t('settings.backup.scopeIncludedTitle')}</div>
+                              <div className='mt-6px text-12px leading-5 text-[var(--color-text-2)]'>{t('settings.backup.scopeIncludedText')}</div>
+                            </div>
+                            <div>
+                              <div className='text-13px font-600 text-[var(--color-text-1)]'>{t('settings.backup.scopeExcludedTitle')}</div>
+                              <div className='mt-6px text-12px leading-5 text-[var(--color-text-2)]'>{t('settings.backup.scopeExcludedText')}</div>
+                            </div>
+                          </div>
+                        </Collapse.Item>
+                      </Collapse>
+                    </BackupSectionCard>
+                  </div>
+
+                  <div className='space-y-14px'>
+                    <BackupSectionCard title={t('settings.backup.actionSection')} description={backupConfigured ? t('settings.backup.actionSectionDescription') : t('settings.backup.configureActionHint')}>
+                      <div className='grid gap-10px sm:grid-cols-2'>
+                        <Button loading={testingConnection} disabled={!backupConfigured} onClick={() => void handleTestConnection()}>
+                          {t('settings.backup.testConnection')}
+                        </Button>
+                        <Button type='primary' disabled={!backupConfigured} onClick={() => setRemarkModalVisible(true)}>
+                          {t('settings.backup.manualBackup')}
+                        </Button>
+                        <Button status='warning' className='sm:col-span-2' disabled={!backupConfigured} onClick={() => setRestoreModalVisible(true)}>
+                          {t('settings.backup.restore')}
+                        </Button>
+                      </div>
+                    </BackupSectionCard>
+
+                    <div className={`rounded-16px border border-solid px-14px py-14px md:px-16px ${statusTone.cardClass}`}>
+                      <div className='flex items-center justify-between gap-12px'>
+                        <div className='flex items-center gap-8px'>
+                          <span className={`inline-flex h-8px w-8px rounded-full ${statusTone.dotClass}`} />
+                          <div className='text-14px font-600 text-[var(--color-text-1)]'>{t('settings.backup.lastBackupPanelTitle')}</div>
                         </div>
-                      }
-                    />
-                  </>
-                )}
+                        <span className={`rounded-full px-10px py-4px text-12px font-600 ${statusTone.badgeClass}`}>{effectiveStatus === 'idle' ? t('settings.backup.status.idle') : t(`settings.backup.status.${effectiveStatus}` as never)}</span>
+                      </div>
 
-                <BackupField label={t('settings.backup.includeDefaultWorkspaceFiles')}>
-                  <Switch checked={backupSettings.includeDefaultWorkspaceFiles} onChange={(checked) => updateBackupSettings((current) => ({ ...current, includeDefaultWorkspaceFiles: checked }))} />
-                </BackupField>
-                <Alert type='info' content={t('settings.backup.defaultWorkspaceNotice')} />
-                <div className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-12px py-10px'>
-                  <div className='text-13px font-600 text-[var(--color-text-1)]'>{t('settings.backup.scopeIncludedTitle')}</div>
-                  <div className='mt-6px text-12px leading-5 text-[var(--color-text-2)]'>{t('settings.backup.scopeIncludedText')}</div>
-                  <div className='mt-12px text-13px font-600 text-[var(--color-text-1)]'>{t('settings.backup.scopeExcludedTitle')}</div>
-                  <div className='mt-6px text-12px leading-5 text-[var(--color-text-2)]'>{t('settings.backup.scopeExcludedText')}</div>
-                </div>
+                      <div className='mt-12px text-13px leading-5 text-[var(--color-text-2)]'>{currentStatusText}</div>
 
-                <div className='flex flex-wrap gap-8px pt-4px'>
-                  <Button loading={testingConnection} onClick={() => void handleTestConnection()}>
-                    {t('settings.backup.testConnection')}
-                  </Button>
-                  <Button type='primary' onClick={() => setRemarkModalVisible(true)}>
-                    {t('settings.backup.manualBackup')}
-                  </Button>
-                  <Button status='warning' onClick={() => setRestoreModalVisible(true)}>
-                    {t('settings.backup.restore')}
-                  </Button>
-                </div>
-
-                <div className='grid gap-12px pt-6px border-t border-solid border-[var(--color-border-2)]'>
-                  <BackupField label={t('settings.backup.autoBackupEnabled')}>
-                    <Switch checked={backupSettings.autoBackupEnabled} onChange={(checked) => updateBackupSettings((current) => ({ ...current, autoBackupEnabled: checked }))} />
-                  </BackupField>
-                  <BackupField label={t('settings.backup.autoBackupInterval')}>
-                    <Select value={backupSettings.autoBackupIntervalHours} disabled={!backupSettings.autoBackupEnabled} onChange={(value) => updateBackupSettings((current) => ({ ...current, autoBackupIntervalHours: value }))}>
-                      {intervalOptions.map((option) => (
-                        <Select.Option key={option.value} value={option.value}>
-                          {t(option.labelKey as never)}
-                        </Select.Option>
-                      ))}
-                    </Select>
-                  </BackupField>
-                  <BackupField label={t('settings.backup.maxBackupCount')}>
-                    <InputNumber min={1} max={99} value={backupSettings.maxBackupCount} onChange={(value) => updateBackupSettings((current) => ({ ...current, maxBackupCount: Number(value || 1) }))} />
-                  </BackupField>
-                  <BackupField label={t('settings.backup.lastStatus')}>
-                    <div className='text-13px text-[var(--color-text-2)]'>{currentStatusText}</div>
-                  </BackupField>
-                  <BackupField label={t('settings.backup.lastSuccessTime')}>
-                    <div className='text-13px text-[var(--color-text-2)]'>{backupSettings.lastBackupSuccessAt ? formatter.format(new Date(backupSettings.lastBackupSuccessAt)) : t('settings.backup.never')}</div>
-                  </BackupField>
+                      <div className='mt-14px grid gap-12px sm:grid-cols-2'>
+                        <div className='rounded-12px bg-[rgba(255,255,255,0.35)] px-12px py-10px'>
+                          <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.lastSuccessTime')}</div>
+                          <div className='mt-4px text-13px font-600 text-[var(--color-text-1)]'>{backupSettings.lastBackupSuccessAt ? formatter.format(new Date(backupSettings.lastBackupSuccessAt)) : t('settings.backup.never')}</div>
+                        </div>
+                        <div className='rounded-12px bg-[rgba(255,255,255,0.35)] px-12px py-10px'>
+                          <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.remotePath')}</div>
+                          <div className='mt-4px break-all text-13px font-600 text-[var(--color-text-1)]'>{currentProviderPath}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
