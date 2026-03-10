@@ -25,7 +25,7 @@ const systemMocks = vi.hoisted(() => ({
 const cloudBackupMocks = vi.hoisted(() => ({
   getCloudBackupSettings: vi.fn(),
   startCloudBackupClient: vi.fn(),
-  subscribeCloudBackupTask: vi.fn(() => () => undefined),
+  subscribeCloudBackupTask: vi.fn((): (() => void) => () => undefined),
   saveCloudBackupSettings: vi.fn().mockResolvedValue(undefined),
   checkCloudBackupConnection: vi.fn().mockResolvedValue(undefined),
   runCloudRemoteBackup: vi.fn(),
@@ -119,11 +119,11 @@ vi.mock('../../src/renderer/components/base/AionScrollArea', () => ({
 }));
 
 vi.mock('../../src/renderer/components/SettingsModal/contents/CloudBackupRemarkModal', () => ({
-  default: () => null,
+  default: (): React.ReactElement | null => null,
 }));
 
 vi.mock('../../src/renderer/components/SettingsModal/contents/CloudBackupRestoreModal', () => ({
-  default: () => null,
+  default: (): React.ReactElement | null => null,
 }));
 
 vi.mock('../../src/renderer/components/SettingsModal/settingsViewContext', () => ({
@@ -151,8 +151,16 @@ vi.mock('swr', () => ({
 import SystemModalContent from '../../src/renderer/components/SettingsModal/contents/SystemModalContent';
 
 describe('SystemModalContent nutstore backup section', () => {
-  it('shows the fixed Nutstore WebDAV URL as readonly and opens the help link', async () => {
+  it('keeps the config collapsed by default, then shows the fixed Nutstore URL and help link after expanding', async () => {
     render(<SystemModalContent />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'settings.backup.expandConfig' })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByDisplayValue(NUTSTORE_WEBDAV_HOST)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backup.expandConfig' }));
 
     await waitFor(() => {
       expect(screen.getByDisplayValue(NUTSTORE_WEBDAV_HOST)).toBeInTheDocument();
@@ -165,5 +173,26 @@ describe('SystemModalContent nutstore backup section', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'settings.backup.nutstoreHelpAction' }));
     expect(systemMocks.openExternal).toHaveBeenCalledWith(NUTSTORE_HELP_URL);
+  });
+
+  it('enables testing and backup actions only after the required fields are present', async () => {
+    cloudBackupMocks.getCloudBackupSettings.mockResolvedValueOnce({
+      ...nutstoreSettings,
+      nutstore: {
+        ...nutstoreSettings.nutstore,
+        username: '',
+        password: '',
+      },
+    });
+
+    render(<SystemModalContent />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'settings.backup.testConnection' })).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'settings.backup.testConnection' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'settings.backup.manualBackup' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'settings.backup.restore' })).toBeDisabled();
   });
 });
