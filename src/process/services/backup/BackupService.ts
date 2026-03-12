@@ -312,6 +312,7 @@ export class BackupService {
         this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName });
         return { fileName, restartRequired: true, manifest };
       } catch (error) {
+        const normalizedError = this.normalizeTaskError(error);
         try {
           getDatabase();
         } catch {
@@ -321,9 +322,10 @@ export class BackupService {
           task: 'restore',
           phase: 'error',
           fileName,
-          message: error instanceof Error ? error.message : String(error),
+          message: normalizedError.message,
+          errorCode: normalizedError.code,
         });
-        throw error;
+        throw normalizedError;
       } finally {
         await removeIfExists(tempDir);
       }

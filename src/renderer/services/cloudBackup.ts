@@ -5,7 +5,7 @@
  */
 
 import { ipcBridge } from '@/common';
-import type { IBackupTaskEvent, ICloudBackupSettings, IRemoteBackupFile, TBackupErrorCode } from '@/common/types/backup';
+import type { IBackupManifest, IBackupTaskEvent, ICloudBackupSettings, IRemoteBackupFile, TBackupErrorCode } from '@/common/types/backup';
 import { withDefaultCloudBackupSettings } from '@/common/utils/backup';
 import { ConfigStorage } from '@/common/storage';
 import i18n from '@/renderer/i18n';
@@ -220,7 +220,7 @@ export async function listCloudRemotePackages(settings: ICloudBackupSettings): P
   return unwrapResponse(ipcBridge.backup.listRemotePackages.invoke({ settings }));
 }
 
-export async function restoreCloudRemotePackage(settings: ICloudBackupSettings, fileName: string): Promise<{ fileName: string; restartRequired: boolean }> {
+export async function restoreCloudRemotePackage(settings: ICloudBackupSettings, fileName: string): Promise<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }> {
   ensureTaskSubscription();
   return unwrapResponse(ipcBridge.backup.restoreRemotePackage.invoke({ settings, fileName }));
 }

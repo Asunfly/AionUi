@@ -141,6 +141,8 @@
     "successTime": "完成時間",
     "included": "已包含",
     "notIncluded": "未包含",
+    "crossPlatformRestoreTitle": "跨系統還原已完成",
+    "crossPlatformRestoreDescription": "此備份建立於 {{sourcePlatform}}，目前還原到 {{currentPlatform}}。重新啟動後，部分外部工具執行環境（例如 MCP 或本機 CLI 整合）可能需要重新設定。",
     "error": {
       "invalidUrl": "WebDAV 連結格式無效，僅支援 http 或 https。",
       "authFailed": "驗證失敗，請檢查使用者名稱或密碼是否正確。",

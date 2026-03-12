@@ -9,6 +9,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CURRENT_DB_VERSION } from '../../src/process/database/schema';
 
 const backupServiceMocks = vi.hoisted(() => ({
   emit: vi.fn(),
@@ -226,7 +227,59 @@ describe('BackupService', () => {
     zip.file('payload/db/aionui.db', 'sqlite');
     backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
 
-    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow('Backup database version 999 is newer than supported version 14.');
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow(`Backup database version 999 is newer than supported version ${CURRENT_DB_VERSION}.`);
+    expect(backupServiceMocks.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'restore',
+        phase: 'error',
+        errorCode: 'package_invalid',
+      })
+    );
+  });
+
+  it('restores a valid backup package and returns its manifest for restart decisions', async () => {
+    const service = new BackupService();
+    const zip = new JSZip();
+    const manifest = {
+      backupSchemaVersion: 1,
+      appVersion: '1.8.23',
+      dbVersion: CURRENT_DB_VERSION,
+      createdAt: '2026-03-07T15:45:30.000Z',
+      providerType: 'webdav' as const,
+      sourcePlatform: 'linux',
+      sourceArch: 'x64',
+      sourceHostname: 'OFFICE-PC',
+      includedSections: ['database'],
+      defaultWorkspaceFiles: {
+        included: false,
+        relativeRoots: [],
+      },
+      sourceSystemDirs: {
+        cacheDir: 'cache',
+        workDir: 'work',
+        dataDir: 'data',
+        configDir: 'config',
+      },
+      fileName: 'AionUi_v1_test.zip',
+    };
+    zip.file('manifest.json', JSON.stringify(manifest));
+    zip.file('payload/db/aionui.db', 'sqlite');
+    backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
+
+    const result = await service.restoreRemotePackage(settings, 'AionUi_v1_test.zip');
+
+    expect(result).toEqual({
+      fileName: 'AionUi_v1_test.zip',
+      restartRequired: true,
+      manifest,
+    });
+    expect(backupServiceMocks.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'restore',
+        phase: 'success',
+        fileName: 'AionUi_v1_test.zip',
+      })
+    );
   });
 
   it('cancels an in-flight backup task and emits the canceled error code', async () => {

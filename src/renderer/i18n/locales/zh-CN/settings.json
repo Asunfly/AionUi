@@ -232,6 +232,8 @@
     "lastBackupPanelTitle": "上次备份状态",
     "restoreSourceTitle": "远端备份包",
     "restoreSourceDescription": "选择一个备份包恢复到当前设备，应用会在完成后自动重启。",
+    "crossPlatformRestoreTitle": "跨系统恢复已完成",
+    "crossPlatformRestoreDescription": "该备份创建于 {{sourcePlatform}}，当前恢复到 {{currentPlatform}}。重启后，部分外部工具运行环境（例如 MCP 或本地 CLI 集成）可能需要重新配置。",
     "restoreFileCount": "共 {{count}} 个可恢复备份包",
     "emptyRemoteListHint": "请检查远端目录，或先执行一次手动备份。",
     "latestBackup": "最新",

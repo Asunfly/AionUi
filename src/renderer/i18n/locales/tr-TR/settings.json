@@ -141,6 +141,8 @@
     "successTime": "Tamamlanma Zamanı",
     "included": "Dahil",
     "notIncluded": "Dahil değil",
+    "crossPlatformRestoreTitle": "Platformlar arası geri yükleme tamamlandı",
+    "crossPlatformRestoreDescription": "Bu yedek {{sourcePlatform}} üzerinde oluşturuldu ve şu anda {{currentPlatform}} üzerinde geri yüklendi. Yeniden başlatmanın ardından MCP veya yerel CLI entegrasyonları gibi bazı harici araç çalışma ortamlarının yeniden yapılandırılması gerekebilir.",
     "error": {
       "invalidUrl": "WebDAV URL'si geçersiz. Yalnızca http ve https desteklenir.",
       "authFailed": "Kimlik doğrulama başarısız. Lütfen kullanıcı adı veya parolayı kontrol edin.",

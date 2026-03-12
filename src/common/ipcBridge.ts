@@ -114,6 +114,8 @@ export const backup = {
   cancelTask: bridge.buildProvider<IBridgeResponse<{ canceled: boolean }>, { requestId?: string } | undefined>('backup.cancel-task'),
   listRemotePackages: bridge.buildProvider<IBridgeResponse<IRemoteBackupFile[]>, { settings: ICloudBackupSettings }>('backup.list-remote-packages'),
   restoreRemotePackage: bridge.buildProvider<IBridgeResponse<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }>, { settings: ICloudBackupSettings; fileName: string }>('backup.restore-remote-package'),
+  startScheduler: bridge.buildProvider<void, void>('backup.start-scheduler'),
+  refreshScheduler: bridge.buildProvider<void, void>('backup.refresh-scheduler'),
   taskStatus: bridge.buildEmitter<IBackupTaskEvent>('backup.task-status'),
 };
 

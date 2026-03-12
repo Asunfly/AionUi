@@ -426,6 +426,20 @@ const SystemModalContent: React.FC = () => {
             const result = await restoreCloudRemotePackage(backupSettings, fileName);
             setRestoreModalVisible(false);
             if (result.restartRequired) {
+              if (result.manifest?.sourcePlatform && systemInfo?.platform && result.manifest.sourcePlatform !== systemInfo.platform) {
+                modal.info({
+                  title: t('settings.backup.crossPlatformRestoreTitle' as never),
+                  content: t('settings.backup.crossPlatformRestoreDescription' as never, {
+                    sourcePlatform: result.manifest.sourcePlatform,
+                    currentPlatform: systemInfo.platform,
+                  }),
+                  onOk: async () => {
+                    await ipcBridge.application.restart.invoke();
+                  },
+                });
+                return;
+              }
+
               await ipcBridge.application.restart.invoke();
             }
           } finally {

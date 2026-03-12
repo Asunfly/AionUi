@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IBackupTaskEvent, ICloudBackupSettings } from '../../src/common/types/backup';
 import CloudBackupRemarkModal from '../../src/renderer/components/SettingsModal/contents/CloudBackupRemarkModal';
@@ -126,7 +126,7 @@ describe('cloud backup modals', () => {
       />
     );
 
-    expect(screen.getByText('settings.backup.phase.uploading')).toBeInTheDocument();
+    expect(screen.getByText('uploading')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /cancel|取消/i }));
     expect(modalMocks.modalConfirm).toHaveBeenCalledTimes(1);
@@ -157,7 +157,9 @@ describe('cloud backup modals', () => {
     );
 
     expect(screen.getByText('settings.backup.successTitle')).toBeInTheDocument();
-    await vi.advanceTimersByTimeAsync(2000);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 

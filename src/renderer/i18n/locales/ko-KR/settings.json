@@ -141,6 +141,8 @@
     "successTime": "완료 시간",
     "included": "포함됨",
     "notIncluded": "포함되지 않음",
+    "crossPlatformRestoreTitle": "크로스 플랫폼 복원이 완료되었습니다",
+    "crossPlatformRestoreDescription": "이 백업은 {{sourcePlatform}}에서 생성되어 현재 {{currentPlatform}}에 복원되었습니다. 재시작 후 MCP 또는 로컬 CLI 연동 같은 일부 외부 도구 실행 환경은 다시 설정해야 할 수 있습니다.",
     "error": {
       "invalidUrl": "WebDAV URL 형식이 올바르지 않습니다. http 또는 https만 지원합니다.",
       "authFailed": "인증에 실패했습니다. 사용자 이름 또는 비밀번호를 확인하세요.",

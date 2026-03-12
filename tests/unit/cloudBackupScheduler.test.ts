@@ -8,108 +8,57 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const schedulerMocks = vi.hoisted(() => ({
   isElectronDesktop: vi.fn(() => true),
-  getCloudBackupSettings: vi.fn(),
-  runCloudRemoteBackup: vi.fn(),
-  saveCloudBackupSettings: vi.fn(),
   startCloudBackupClient: vi.fn(),
+  startScheduler: vi.fn(),
+  refreshScheduler: vi.fn(),
 }));
 
 vi.mock('@/renderer/utils/platform', () => ({
   isElectronDesktop: schedulerMocks.isElectronDesktop,
 }));
 
+vi.mock('@/common', () => ({
+  ipcBridge: {
+    backup: {
+      startScheduler: {
+        invoke: schedulerMocks.startScheduler,
+      },
+      refreshScheduler: {
+        invoke: schedulerMocks.refreshScheduler,
+      },
+    },
+  },
+}));
+
 vi.mock('../../src/renderer/services/cloudBackup', () => ({
-  getCloudBackupSettings: schedulerMocks.getCloudBackupSettings,
-  runCloudRemoteBackup: schedulerMocks.runCloudRemoteBackup,
-  saveCloudBackupSettings: schedulerMocks.saveCloudBackupSettings,
   startCloudBackupClient: schedulerMocks.startCloudBackupClient,
 }));
 
 describe('cloudBackupScheduler', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-03-07T08:00:00.000Z'));
     vi.clearAllMocks();
     schedulerMocks.isElectronDesktop.mockReturnValue(true);
+    schedulerMocks.startScheduler.mockResolvedValue(undefined);
+    schedulerMocks.refreshScheduler.mockResolvedValue(undefined);
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('runs the first-startup backup once per day and schedules interval backups', async () => {
-    schedulerMocks.getCloudBackupSettings.mockResolvedValue({
-      activeProvider: 'webdav',
-      webdav: {
-        host: 'https://example.com/dav',
-        username: 'demo',
-        password: 'secret',
-        remotePath: '/AionUibackup',
-      },
-      nutstore: {
-        username: '',
-        password: '',
-        remotePath: '/AionUibackup',
-      },
-      includeDefaultWorkspaceFiles: false,
-      autoBackupEnabled: true,
-      autoBackupIntervalHours: 1,
-      maxBackupCount: 5,
-      lastBackupStatus: 'idle',
-    });
-    schedulerMocks.saveCloudBackupSettings.mockResolvedValue(undefined);
-    schedulerMocks.runCloudRemoteBackup.mockResolvedValue(undefined);
-
+  it('starts the process scheduler and cloud backup client on desktop', async () => {
     vi.resetModules();
     const { startCloudBackupScheduler } = await import('../../src/renderer/services/cloudBackupScheduler');
 
     await startCloudBackupScheduler();
 
     expect(schedulerMocks.startCloudBackupClient).toHaveBeenCalledTimes(1);
-    expect(schedulerMocks.saveCloudBackupSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        lastStartupAutoBackupDate: '2026-03-07',
-      })
-    );
-    expect(schedulerMocks.runCloudRemoteBackup).toHaveBeenCalledTimes(1);
-    expect(schedulerMocks.runCloudRemoteBackup).toHaveBeenCalledWith(expect.any(Object), {
-      automatic: true,
-    });
-
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-
-    expect(schedulerMocks.runCloudRemoteBackup).toHaveBeenCalledTimes(2);
+    expect(schedulerMocks.startScheduler).toHaveBeenCalledTimes(1);
   });
 
-  it('does not rerun the startup backup when today already has a startup snapshot', async () => {
-    schedulerMocks.getCloudBackupSettings.mockResolvedValue({
-      activeProvider: 'webdav',
-      webdav: {
-        host: 'https://example.com/dav',
-        username: 'demo',
-        password: 'secret',
-        remotePath: '/AionUibackup',
-      },
-      nutstore: {
-        username: '',
-        password: '',
-        remotePath: '/AionUibackup',
-      },
-      includeDefaultWorkspaceFiles: false,
-      autoBackupEnabled: true,
-      autoBackupIntervalHours: 24,
-      maxBackupCount: 5,
-      lastBackupStatus: 'idle',
-      lastStartupAutoBackupDate: '2026-03-07',
-    });
-    schedulerMocks.saveCloudBackupSettings.mockResolvedValue(undefined);
-
+  it('refreshes the process scheduler on desktop', async () => {
     vi.resetModules();
-    const { startCloudBackupScheduler } = await import('../../src/renderer/services/cloudBackupScheduler');
+    const { refreshCloudBackupScheduler } = await import('../../src/renderer/services/cloudBackupScheduler');
 
-    await startCloudBackupScheduler();
+    await refreshCloudBackupScheduler();
 
-    expect(schedulerMocks.saveCloudBackupSettings).not.toHaveBeenCalled();
-    expect(schedulerMocks.runCloudRemoteBackup).not.toHaveBeenCalled();
+    expect(schedulerMocks.refreshScheduler).toHaveBeenCalledTimes(1);
+    expect(schedulerMocks.startCloudBackupClient).not.toHaveBeenCalled();
   });
 });

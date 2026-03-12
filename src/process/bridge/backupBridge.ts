@@ -6,6 +6,7 @@
 
 import { ipcBridge } from '@/common';
 import { backupService } from '@/process/services/backup/BackupService';
+import { backupSchedulerService } from '@/process/services/backup/BackupSchedulerService';
 import { getBackupErrorCode } from '@/process/services/backup/BackupTaskError';
 
 export function initBackupBridge(): void {
@@ -80,5 +81,13 @@ export function initBackupBridge(): void {
         code: getBackupErrorCode(error),
       };
     }
+  });
+
+  ipcBridge.backup.startScheduler.provider(async () => {
+    await backupSchedulerService.start();
+  });
+
+  ipcBridge.backup.refreshScheduler.provider(async () => {
+    await backupSchedulerService.refresh();
   });
 }

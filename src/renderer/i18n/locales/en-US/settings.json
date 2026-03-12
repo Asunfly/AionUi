@@ -232,6 +232,8 @@
     "lastBackupPanelTitle": "Latest Backup Status",
     "restoreSourceTitle": "Remote Packages",
     "restoreSourceDescription": "Choose a backup package to restore on this device. The app restarts automatically after completion.",
+    "crossPlatformRestoreTitle": "Cross-platform restore completed",
+    "crossPlatformRestoreDescription": "This backup was created on {{sourcePlatform}} and restored on {{currentPlatform}}. After restart, some external tool runtimes, such as MCP or local CLI integrations, may need to be reconfigured.",
     "restoreFileCount": "{{count}} remote backup package(s) available",
     "emptyRemoteListHint": "Check the remote folder, or create a manual backup first.",
     "latestBackup": "Latest",

@@ -141,6 +141,8 @@
     "successTime": "完了時刻",
     "included": "含む",
     "notIncluded": "含まない",
+    "crossPlatformRestoreTitle": "クロスプラットフォーム復元が完了しました",
+    "crossPlatformRestoreDescription": "このバックアップは {{sourcePlatform}} で作成され、現在 {{currentPlatform}} に復元されました。再起動後、MCP やローカル CLI 連携など一部の外部ツール実行環境は再設定が必要になる場合があります。",
     "error": {
       "invalidUrl": "WebDAV URL が無効です。http または https のみ対応しています。",
       "authFailed": "認証に失敗しました。ユーザー名またはパスワードを確認してください。",

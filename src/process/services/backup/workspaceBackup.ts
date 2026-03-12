@@ -31,6 +31,10 @@ function trimTrailingPortableSlash(value: string): string {
   return value.length > 1 ? value.replace(/\/+$/g, '') : value;
 }
 
+function usesWindowsPath(rootPath: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(rootPath) || rootPath.startsWith('\\\\') || rootPath.includes('\\');
+}
+
 function normalizeForComparison(value: string, platform: TWorkspacePlatform): string {
   const normalized = trimTrailingPortableSlash(toPortablePath(value));
   return platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -82,7 +86,8 @@ export function mapManagedWorkspacePath(workspace: string | null | undefined, so
     return workspace;
   }
 
-  return path.join(targetWorkDir, ...relativePath.split('/'));
+  const joiner = usesWindowsPath(targetWorkDir) ? path.win32 : path.posix;
+  return joiner.join(targetWorkDir, ...relativePath.split('/'));
 }
 
 export function remapConversationExtraPaths<T>(extra: T, sourceWorkDir: string, targetWorkDir: string, sourcePlatform: TWorkspacePlatform = process.platform): { changed: boolean; value: T } {
