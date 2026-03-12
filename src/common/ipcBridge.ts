@@ -89,8 +89,12 @@ export interface ICdpConfig {
   port?: number;
 }
 
+export interface IApplicationRestartOptions {
+  clearRuntimeState?: boolean;
+}
+
 export const application = {
-  restart: bridge.buildProvider<void, void>('restart-app'), // 重启应用
+  restart: bridge.buildProvider<void, IApplicationRestartOptions | undefined>('restart-app'), // 重启应用
   openDevTools: bridge.buildProvider<boolean, void>('open-dev-tools'), // 打开/关闭开发者工具，返回操作后的状态
   isDevToolsOpened: bridge.buildProvider<boolean, void>('is-dev-tools-opened'), // 获取 DevTools 当前状态
   systemInfo: bridge.buildProvider<{ cacheDir: string; workDir: string; platform: string; arch: string }, void>('system.info'), // 获取系统信息
@@ -113,7 +117,7 @@ export const backup = {
   runRemoteBackup: bridge.buildProvider<IBridgeResponse<IRemoteBackupFile>, { settings: ICloudBackupSettings; fileName?: string; automatic?: boolean; requestId?: string }>('backup.run-remote-backup'),
   cancelTask: bridge.buildProvider<IBridgeResponse<{ canceled: boolean }>, { requestId?: string } | undefined>('backup.cancel-task'),
   listRemotePackages: bridge.buildProvider<IBridgeResponse<IRemoteBackupFile[]>, { settings: ICloudBackupSettings }>('backup.list-remote-packages'),
-  restoreRemotePackage: bridge.buildProvider<IBridgeResponse<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }>, { settings: ICloudBackupSettings; fileName: string }>('backup.restore-remote-package'),
+  restoreRemotePackage: bridge.buildProvider<IBridgeResponse<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }>, { settings: ICloudBackupSettings; fileName: string; requestId?: string }>('backup.restore-remote-package'),
   startScheduler: bridge.buildProvider<void, void>('backup.start-scheduler'),
   refreshScheduler: bridge.buildProvider<void, void>('backup.refresh-scheduler'),
   taskStatus: bridge.buildEmitter<IBackupTaskEvent>('backup.task-status'),

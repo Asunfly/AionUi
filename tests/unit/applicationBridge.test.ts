@@ -27,6 +27,12 @@ describe('applicationBridge CDP functionality', () => {
         relaunch: vi.fn(),
         exit: vi.fn(),
       },
+      session: {
+        defaultSession: {
+          clearStorageData: vi.fn().mockResolvedValue(undefined),
+          clearCache: vi.fn().mockResolvedValue(undefined),
+        },
+      },
     }));
 
     // Mock fs
@@ -34,6 +40,12 @@ describe('applicationBridge CDP functionality', () => {
       existsSync: vi.fn(() => false),
       readFileSync: vi.fn(() => '{}'),
       writeFileSync: vi.fn(),
+    }));
+
+    vi.doMock('fs/promises', () => ({
+      default: {
+        rm: vi.fn().mockResolvedValue(undefined),
+      },
     }));
 
     // Mock http
@@ -70,6 +82,7 @@ describe('applicationBridge CDP functionality', () => {
     // Mock utils
     vi.doMock('@/process/utils', () => ({
       copyDirectoryRecursively: vi.fn(),
+      getTempPath: vi.fn(() => '/mock/temp/aionui'),
     }));
   });
 
@@ -79,6 +92,7 @@ describe('applicationBridge CDP functionality', () => {
     vi.doUnmock('electron');
     vi.doUnmock('fs');
     vi.doUnmock('http');
+    vi.doUnmock('fs/promises');
     vi.doUnmock('@/process/WorkerManage');
     vi.doUnmock('@/process/utils/zoom');
     vi.doUnmock('@/process/initStorage');

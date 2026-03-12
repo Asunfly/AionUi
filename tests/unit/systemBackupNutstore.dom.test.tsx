@@ -169,8 +169,10 @@ describe('SystemModalContent nutstore backup section', () => {
 
     const urlInput = screen.getByDisplayValue(NUTSTORE_WEBDAV_HOST) as HTMLInputElement;
     expect(urlInput.readOnly).toBe(true);
-    expect(screen.getByText('settings.backup.nutstorePasswordNotice')).toBeInTheDocument();
+    expect(screen.getByText('settings.backup.providerNutstoreDescription')).toBeInTheDocument();
     expect(screen.queryByText('settings.backup.nutstoreWebdavNotice')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.backup.connectionSectionDescription')).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.backup.policySectionDescription')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'settings.backup.testConnection' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'settings.backup.nutstoreHelpAction' }));

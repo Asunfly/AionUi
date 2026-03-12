@@ -237,7 +237,7 @@ describe('BackupService', () => {
     );
   });
 
-  it('restores a valid backup package and returns its manifest for restart decisions', async () => {
+  it('restores a valid backup package, returns its manifest, and emits request-scoped restore events', async () => {
     const service = new BackupService();
     const zip = new JSZip();
     const manifest = {
@@ -252,7 +252,7 @@ describe('BackupService', () => {
       includedSections: ['database'],
       defaultWorkspaceFiles: {
         included: false,
-        relativeRoots: [],
+        relativeRoots: [] as string[],
       },
       sourceSystemDirs: {
         cacheDir: 'cache',
@@ -266,7 +266,7 @@ describe('BackupService', () => {
     zip.file('payload/db/aionui.db', 'sqlite');
     backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
 
-    const result = await service.restoreRemotePackage(settings, 'AionUi_v1_test.zip');
+    const result = await service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req');
 
     expect(result).toEqual({
       fileName: 'AionUi_v1_test.zip',
@@ -278,6 +278,7 @@ describe('BackupService', () => {
         task: 'restore',
         phase: 'success',
         fileName: 'AionUi_v1_test.zip',
+        requestId: 'restore-req',
       })
     );
   });

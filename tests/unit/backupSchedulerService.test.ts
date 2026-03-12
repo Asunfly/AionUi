@@ -36,8 +36,8 @@ describe('BackupSchedulerService', () => {
     vi.useRealTimers();
   });
 
-  it('runs the first-startup backup once per day and schedules interval backups', async () => {
-    let settings = {
+  it('does not run an immediate startup backup and only schedules interval backups', async () => {
+    const settings = {
       activeProvider: 'webdav' as const,
       webdav: {
         host: 'https://example.com/dav',
@@ -57,10 +57,7 @@ describe('BackupSchedulerService', () => {
       lastBackupStatus: 'idle' as const,
     };
 
-    schedulerMocks.getConfig.mockImplementation(async () => settings);
-    schedulerMocks.setConfig.mockImplementation(async (_key: string, nextSettings: typeof settings) => {
-      settings = nextSettings;
-    });
+    schedulerMocks.getConfig.mockResolvedValue(settings);
     schedulerMocks.runRemoteBackup.mockResolvedValue(undefined);
 
     vi.resetModules();
@@ -69,21 +66,16 @@ describe('BackupSchedulerService', () => {
 
     await service.start();
 
-    expect(schedulerMocks.setConfig).toHaveBeenCalledWith(
-      'backup.cloud',
-      expect.objectContaining({
-        lastStartupAutoBackupDate: '2026-03-07',
-      })
-    );
-    expect(schedulerMocks.runRemoteBackup).toHaveBeenCalledTimes(1);
-    expect(schedulerMocks.runRemoteBackup).toHaveBeenCalledWith(expect.any(Object), undefined, true);
+    expect(schedulerMocks.setConfig).not.toHaveBeenCalled();
+    expect(schedulerMocks.runRemoteBackup).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
 
-    expect(schedulerMocks.runRemoteBackup).toHaveBeenCalledTimes(2);
+    expect(schedulerMocks.runRemoteBackup).toHaveBeenCalledTimes(1);
+    expect(schedulerMocks.runRemoteBackup).toHaveBeenCalledWith(expect.any(Object), undefined, true);
   });
 
-  it('does not rerun the startup backup when today already has a startup snapshot', async () => {
+  it('does not schedule anything when automatic backup is disabled', async () => {
     const settings = {
       activeProvider: 'webdav' as const,
       webdav: {
@@ -98,11 +90,10 @@ describe('BackupSchedulerService', () => {
         remotePath: '/AionUibackup',
       },
       includeDefaultWorkspaceFiles: false,
-      autoBackupEnabled: true,
+      autoBackupEnabled: false,
       autoBackupIntervalHours: 24,
       maxBackupCount: 5,
       lastBackupStatus: 'idle' as const,
-      lastStartupAutoBackupDate: '2026-03-07',
     };
 
     schedulerMocks.getConfig.mockResolvedValue(settings);
@@ -112,6 +103,7 @@ describe('BackupSchedulerService', () => {
     const service = new BackupSchedulerService();
 
     await service.start();
+    await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
 
     expect(schedulerMocks.setConfig).not.toHaveBeenCalled();
     expect(schedulerMocks.runRemoteBackup).not.toHaveBeenCalled();

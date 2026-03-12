@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IBackupTaskEvent, ICloudBackupSettings } from '../../src/common/types/backup';
 import CloudBackupRemarkModal from '../../src/renderer/components/SettingsModal/contents/CloudBackupRemarkModal';
 import CloudBackupRestoreModal from '../../src/renderer/components/SettingsModal/contents/CloudBackupRestoreModal';
+import CloudBackupRestoreProgressModal from '../../src/renderer/components/SettingsModal/contents/CloudBackupRestoreProgressModal';
 
 const modalMocks = vi.hoisted(() => ({
   getSuggestedCloudBackupFileName: vi.fn(),
@@ -158,8 +159,9 @@ describe('cloud backup modals', () => {
     );
 
     expect(screen.getByText('settings.backup.successTitle')).toBeInTheDocument();
+    expect(screen.queryByDisplayValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip')).not.toBeInTheDocument();
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(10000);
     });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
@@ -223,5 +225,109 @@ describe('cloud backup modals', () => {
     await waitFor(() => {
       expect(screen.getByText('AionUi_v1.8.23_20260321-101010_TEST_20.zip')).toBeInTheDocument();
     });
+  });
+
+  it('shows restore progress, surfaces inline errors, and exposes restart action after success', async () => {
+    const onRestart = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    const { rerender } = render(<CloudBackupRestoreProgressModal visible fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip' requestId='restore-req' taskEvent={null} currentPlatform='win32' onClose={onClose} onRestart={onRestart} />);
+
+    expect(screen.getByText('preparing')).toBeInTheDocument();
+
+    rerender(
+      <CloudBackupRestoreProgressModal
+        visible
+        fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip'
+        requestId='restore-req'
+        taskEvent={
+          {
+            task: 'restore',
+            phase: 'restoring',
+            timestamp: Date.now(),
+            requestId: 'restore-req',
+            fileName: 'AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip',
+          } satisfies IBackupTaskEvent
+        }
+        currentPlatform='win32'
+        onClose={onClose}
+        onRestart={onRestart}
+      />
+    );
+
+    expect(screen.getByText('restoring')).toBeInTheDocument();
+
+    rerender(
+      <CloudBackupRestoreProgressModal
+        visible
+        fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip'
+        requestId='restore-req'
+        taskEvent={
+          {
+            task: 'restore',
+            phase: 'error',
+            timestamp: Date.now(),
+            requestId: 'restore-req',
+            errorCode: 'package_invalid',
+            message: 'package-invalid',
+          } satisfies IBackupTaskEvent
+        }
+        currentPlatform='win32'
+        onClose={onClose}
+        onRestart={onRestart}
+      />
+    );
+
+    expect(screen.getByText('settings.backup.restoreErrorTitle')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'common.close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    vi.useFakeTimers();
+    rerender(
+      <CloudBackupRestoreProgressModal
+        visible
+        fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip'
+        requestId='restore-req'
+        taskEvent={
+          {
+            task: 'restore',
+            phase: 'success',
+            timestamp: Date.now(),
+            requestId: 'restore-req',
+            fileName: 'AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip',
+          } satisfies IBackupTaskEvent
+        }
+        manifest={{
+          backupSchemaVersion: 1,
+          appVersion: '1.8.23',
+          dbVersion: 1,
+          createdAt: '2026-03-07T15:45:30.000Z',
+          providerType: 'webdav',
+          sourcePlatform: 'linux',
+          sourceArch: 'x64',
+          sourceHostname: 'OFFICE-PC',
+          includedSections: ['database'],
+          defaultWorkspaceFiles: {
+            included: false,
+            relativeRoots: [],
+          },
+          sourceSystemDirs: {
+            cacheDir: 'cache',
+            workDir: 'work',
+            dataDir: 'data',
+            configDir: 'config',
+          },
+          fileName: 'AionUi_v1_test.zip',
+        }}
+        currentPlatform='win32'
+        onClose={onClose}
+        onRestart={onRestart}
+      />
+    );
+
+    expect(screen.getByText('settings.backup.restoreSuccessTitle')).toBeInTheDocument();
+    expect(screen.getByText('settings.backup.crossPlatformRestoreDescription')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'settings.restartNow' }));
+    expect(onRestart).toHaveBeenCalledTimes(1);
   });
 });

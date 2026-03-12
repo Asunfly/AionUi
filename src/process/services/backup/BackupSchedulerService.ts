@@ -19,7 +19,6 @@ export class BackupSchedulerService {
     }
 
     this.started = true;
-    await this.maybeRunStartupBackup();
     await this.scheduleNextRun();
   }
 
@@ -39,16 +38,8 @@ export class BackupSchedulerService {
     }
   }
 
-  private getTodayKey(date = new Date()): string {
-    return date.toISOString().slice(0, 10);
-  }
-
   private async getSettings(): Promise<ICloudBackupSettings> {
     return withDefaultCloudBackupSettings(await ConfigStorage.get('backup.cloud'));
-  }
-
-  private async saveSettings(settings: ICloudBackupSettings): Promise<void> {
-    await ConfigStorage.set('backup.cloud', settings);
   }
 
   private async performAutomaticBackup(): Promise<void> {
@@ -58,29 +49,6 @@ export class BackupSchedulerService {
     }
 
     await backupService.runRemoteBackup(settings, undefined, true);
-  }
-
-  private async maybeRunStartupBackup(): Promise<void> {
-    const settings = await this.getSettings();
-    if (!settings.autoBackupEnabled || !isCloudBackupConfigured(settings)) {
-      return;
-    }
-
-    const todayKey = this.getTodayKey();
-    if (settings.lastStartupAutoBackupDate === todayKey) {
-      return;
-    }
-
-    await this.saveSettings({
-      ...settings,
-      lastStartupAutoBackupDate: todayKey,
-    });
-
-    try {
-      await backupService.runRemoteBackup(settings, undefined, true);
-    } catch {
-      // Automatic backup failures are surfaced by backup task events.
-    }
   }
 
   private async scheduleNextRun(): Promise<void> {

@@ -85,7 +85,7 @@ function handleTaskEvent(event: IBackupTaskEvent): void {
   currentTaskEvent = event;
   notifyTaskListeners();
 
-  if (event.task === 'list') {
+  if (event.task !== 'backup') {
     return;
   }
 
@@ -99,8 +99,8 @@ function handleTaskEvent(event: IBackupTaskEvent): void {
       lastBackupSuccessAt: event.timestamp,
       lastBackupMessage: event.fileName || `${taskLabel} ${phaseLabel}`,
     });
-    if (event.task !== 'backup' || event.automatic) {
-      Message.success(i18n.t('settings.backup.taskSuccess', { defaultValue: '{{task}} completed', task: taskLabel }));
+    if (event.task === 'backup' && event.automatic) {
+      return;
     }
     return;
   }
@@ -110,7 +110,7 @@ function handleTaskEvent(event: IBackupTaskEvent): void {
       lastBackupStatus: event.errorCode === 'backup_canceled' ? 'idle' : 'error',
       lastBackupMessage: errorMessage,
     });
-    if (event.task !== 'backup' || event.automatic) {
+    if (event.task === 'backup' && event.automatic) {
       Message.error(errorMessage || i18n.t('settings.backup.taskFailed', { defaultValue: '{{task}} failed', task: taskLabel }));
     }
     return;
@@ -120,16 +120,6 @@ function handleTaskEvent(event: IBackupTaskEvent): void {
     lastBackupStatus: 'running',
     lastBackupMessage: `${taskLabel} ${phaseLabel}`,
   });
-
-  if (event.task !== 'backup' || event.automatic) {
-    Message.info(
-      i18n.t('settings.backup.taskProgress', {
-        defaultValue: '{{task}}: {{phase}}',
-        task: taskLabel,
-        phase: phaseLabel,
-      })
-    );
-  }
 }
 
 function ensureTaskSubscription(): void {
@@ -220,7 +210,13 @@ export async function listCloudRemotePackages(settings: ICloudBackupSettings): P
   return unwrapResponse(ipcBridge.backup.listRemotePackages.invoke({ settings }));
 }
 
-export async function restoreCloudRemotePackage(settings: ICloudBackupSettings, fileName: string): Promise<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }> {
+export async function restoreCloudRemotePackage(settings: ICloudBackupSettings, fileName: string, options?: { requestId?: string }): Promise<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }> {
   ensureTaskSubscription();
-  return unwrapResponse(ipcBridge.backup.restoreRemotePackage.invoke({ settings, fileName }));
+  return unwrapResponse(
+    ipcBridge.backup.restoreRemotePackage.invoke({
+      settings,
+      fileName,
+      requestId: options?.requestId,
+    })
+  );
 }

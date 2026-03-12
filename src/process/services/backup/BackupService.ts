@@ -271,7 +271,7 @@ export class BackupService {
     }
   }
 
-  async restoreRemotePackage(settings: ICloudBackupSettings, fileName: string): Promise<{ fileName: string; restartRequired: boolean; manifest: IBackupManifest }> {
+  async restoreRemotePackage(settings: ICloudBackupSettings, fileName: string, requestId?: string): Promise<{ fileName: string; restartRequired: boolean; manifest: IBackupManifest }> {
     return this.runExclusive('restore', async () => {
       this.assertSettings(settings);
       if (!MANAGED_CLOUD_BACKUP_FILE_PATTERN.test(fileName)) {
@@ -284,10 +284,10 @@ export class BackupService {
       const rollbackDir = path.join(tempDir, 'rollback');
 
       try {
-        this.emitTask({ task: 'restore', phase: 'downloading', fileName });
+        this.emitTask({ task: 'restore', phase: 'downloading', fileName, requestId });
         const archiveBuffer = await client.downloadFile(fileName);
 
-        this.emitTask({ task: 'restore', phase: 'validating', fileName });
+        this.emitTask({ task: 'restore', phase: 'validating', fileName, requestId });
         const manifest = await this.extractAndValidateArchive(archiveBuffer, stagingDir);
 
         WorkerManage.clear();
@@ -298,7 +298,7 @@ export class BackupService {
         await this.createWorkspaceRollbackSnapshot(manifest.defaultWorkspaceFiles.relativeRoots, rollbackDir);
 
         try {
-          this.emitTask({ task: 'restore', phase: 'restoring', fileName });
+          this.emitTask({ task: 'restore', phase: 'restoring', fileName, requestId });
           await this.replaceManagedData(currentEntries, stagingDir);
           await this.replaceDefaultWorkspaceDirectories(manifest.defaultWorkspaceFiles.relativeRoots, stagingDir);
           await this.rewriteManagedWorkspacePaths(manifest);
@@ -309,7 +309,7 @@ export class BackupService {
         }
 
         getDatabase();
-        this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName });
+        this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName, requestId });
         return { fileName, restartRequired: true, manifest };
       } catch (error) {
         const normalizedError = this.normalizeTaskError(error);
@@ -324,6 +324,7 @@ export class BackupService {
           fileName,
           message: normalizedError.message,
           errorCode: normalizedError.code,
+          requestId,
         });
         throw normalizedError;
       } finally {

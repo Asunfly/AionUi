@@ -42,7 +42,6 @@ export interface ICloudBackupSettings {
   lastBackupStatus?: 'idle' | 'running' | 'success' | 'error';
   lastBackupSuccessAt?: number;
   lastBackupMessage?: string;
-  lastStartupAutoBackupDate?: string;
 }
 
 export interface IRemoteBackupFile {

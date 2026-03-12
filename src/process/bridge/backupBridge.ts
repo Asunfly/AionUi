@@ -70,9 +70,9 @@ export function initBackupBridge(): void {
     }
   });
 
-  ipcBridge.backup.restoreRemotePackage.provider(async ({ settings, fileName }) => {
+  ipcBridge.backup.restoreRemotePackage.provider(async ({ settings, fileName, requestId }) => {
     try {
-      const data = await backupService.restoreRemotePackage(settings, fileName);
+      const data = await backupService.restoreRemotePackage(settings, fileName, requestId);
       return { success: true, data };
     } catch (error) {
       return {

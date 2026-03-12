@@ -5,8 +5,8 @@
  */
 
 import type { IBackupTaskEvent, ICloudBackupSettings } from '@/common/types/backup';
-import { formatCloudBackupErrorMessage, getSuggestedCloudBackupFileName } from '@/renderer/services/cloudBackup';
 import AionSteps from '@/renderer/components/base/AionSteps';
+import { formatCloudBackupErrorMessage, getSuggestedCloudBackupFileName } from '@/renderer/services/cloudBackup';
 import { Alert, Input, Modal, Progress } from '@arco-design/web-react';
 import { CheckOne, Loading } from '@icon-park/react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -37,21 +37,6 @@ function formatFileSize(size?: number): string {
   return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-const BACKUP_STEP_PHASES = ['connecting', 'snapshotting', 'collecting', 'packaging', 'uploading', 'success'] as const;
-const SUCCESS_AUTO_CLOSE_MS = 5000;
-
-const BACKUP_PHASE_PROGRESS: Record<string, number> = {
-  idle: 0,
-  preparing: 8,
-  connecting: 18,
-  snapshotting: 36,
-  collecting: 54,
-  packaging: 72,
-  uploading: 90,
-  success: 100,
-  error: 100,
-};
-
 function formatElapsedTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const restSeconds = seconds % 60;
@@ -61,6 +46,21 @@ function formatElapsedTime(seconds: number): string {
 
   return `${minutes}m ${restSeconds}s`;
 }
+
+const BACKUP_STEP_PHASES = ['connecting', 'snapshotting', 'collecting', 'packaging', 'uploading', 'success'] as const;
+const SUCCESS_AUTO_CLOSE_MS = 10000;
+
+const BACKUP_PHASE_PROGRESS: Record<string, number> = {
+  idle: 0,
+  preparing: 6,
+  connecting: 18,
+  snapshotting: 34,
+  collecting: 52,
+  packaging: 74,
+  uploading: 92,
+  success: 100,
+  error: 100,
+};
 
 const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible, settings, taskEvent, onClose, onStart, onCancelTask }) => {
   const { t } = useTranslation();
@@ -150,34 +150,12 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
   }, [activeEvent]);
 
   useEffect(() => {
-    const targetProgress = BACKUP_PHASE_PROGRESS[effectivePhase] ?? 0;
-
     if (!visible) {
       return;
     }
 
-    if (targetProgress <= displayProgress) {
-      if (effectivePhase === 'idle') {
-        setDisplayProgress(0);
-      }
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setDisplayProgress((previous) => {
-        const delta = Math.max(1, Math.ceil((targetProgress - previous) / 6));
-        const next = Math.min(previous + delta, targetProgress);
-        if (next >= targetProgress) {
-          clearInterval(timer);
-        }
-        return next;
-      });
-    }, 60);
-
-    return () => {
-      clearInterval(timer);
-    };
-  }, [displayProgress, effectivePhase, visible]);
+    setDisplayProgress(BACKUP_PHASE_PROGRESS[effectivePhase] ?? 0);
+  }, [effectivePhase, visible]);
 
   useEffect(() => {
     if (!visible || !isRunning) {
@@ -275,6 +253,10 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
       className='aionui-modal'
       title={t('settings.backup.remarkModalTitle')}
       visible={visible}
+      focusLock={false}
+      autoFocus={false}
+      maskClosable={!isRunning}
+      escToExit={!isRunning}
       onCancel={handleCancel}
       onOk={isSuccess ? onClose : handleSubmit}
       okText={isSuccess ? t('common.close') : t('settings.backup.startBackup')}
@@ -282,15 +264,14 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
       okButtonProps={{
         disabled: !fileName.trim() || loadingSuggestedName || isRunning,
       }}
-      cancelButtonProps={{
-        disabled: false,
-      }}
     >
       <div className='space-y-16px'>
-        <div className='space-y-8px'>
-          <div className='text-13px text-[var(--color-text-2)]'>{t('settings.backup.fileNameLabel')}</div>
-          <Input value={fileName} onChange={setFileName} placeholder={t('settings.backup.fileNamePlaceholder')} disabled={loadingSuggestedName || isRunning || isSuccess} />
-        </div>
+        {!isSuccess && (
+          <div className='space-y-8px'>
+            <div className='text-13px text-[var(--color-text-2)]'>{t('settings.backup.fileNameLabel')}</div>
+            <Input value={fileName} onChange={setFileName} placeholder={t('settings.backup.fileNamePlaceholder')} disabled={loadingSuggestedName || isRunning} spellCheck={false} />
+          </div>
+        )}
 
         {!isRunning && !isSuccess && (
           <>
@@ -309,68 +290,86 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
           </>
         )}
 
-        {(isRunning || isSuccess) && (
+        {isRunning && (
           <div className='space-y-16px'>
-            {isSuccess ? (
-              <div className='rounded-16px border border-solid border-[var(--color-success-light-3)] bg-[var(--color-success-light-1)] px-16px py-20px text-center'>
-                <div className='mx-auto mb-12px flex h-56px w-56px items-center justify-center rounded-full bg-[var(--color-success-light-2)]'>
-                  <CheckOne theme='filled' size='28' fill='var(--color-success-6)' />
+            <div className='rounded-16px border border-solid border-[var(--color-primary-light-4)] bg-[var(--color-primary-light-1)] px-16px py-16px'>
+              <div className='flex flex-col gap-14px'>
+                <div className='flex flex-wrap items-start justify-between gap-12px'>
+                  <div className='min-w-0 flex-1'>
+                    <div className='flex items-center gap-8px text-[var(--color-primary-6)]'>
+                      <Loading theme='outline' size='16' className='animate-spin' />
+                      <span className='text-15px font-600 text-[var(--color-text-1)]'>{currentPhaseLabel}</span>
+                    </div>
+                    <div className='mt-8px text-13px text-[var(--color-text-2)]'>
+                      {t('settings.backup.taskProgress', {
+                        defaultValue: '{{task}}: {{phase}}',
+                        task: t('settings.backup.taskLabel.backup'),
+                        phase: currentPhaseLabel,
+                      })}
+                    </div>
+                  </div>
+                  <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.elapsedTime', { time: formatElapsedTime(elapsedSeconds) })}</div>
                 </div>
-                <div className='text-18px font-600 text-[var(--color-text-1)]'>{t('settings.backup.successTitle')}</div>
-                <div className='mt-6px text-13px text-[var(--color-text-3)]'>{t('settings.backup.successDescription', { count: autoCloseCountdown ?? 0, defaultValue: 'This backup package has been uploaded successfully. Closing in {{count}}s.' })}</div>
-                <div className='mt-16px grid grid-cols-[120px_1fr] gap-y-8px text-left text-13px'>
-                  <div className='text-[var(--color-text-3)]'>{t('settings.backup.fileNameLabel')}</div>
-                  <div className='break-all text-[var(--color-text-1)]'>{activeEvent?.fileName || fileName}</div>
-                  <div className='text-[var(--color-text-3)]'>{t('settings.backup.successProvider')}</div>
-                  <div className='text-[var(--color-text-1)]'>{settings.activeProvider === 'nutstore' ? t('settings.backup.nutstore') : t('settings.backup.webdav')}</div>
-                  <div className='text-[var(--color-text-3)]'>{t('settings.backup.remotePath')}</div>
-                  <div className='text-[var(--color-text-1)]'>{settings.activeProvider === 'nutstore' ? settings.nutstore.remotePath : settings.webdav.remotePath}</div>
-                  <div className='text-[var(--color-text-3)]'>{t('settings.backup.includeDefaultWorkspaceFiles')}</div>
-                  <div className='text-[var(--color-text-1)]'>{settings.includeDefaultWorkspaceFiles ? t('settings.backup.included') : t('settings.backup.notIncluded')}</div>
-                  <div className='text-[var(--color-text-3)]'>{t('settings.backup.successSize')}</div>
-                  <div className='text-[var(--color-text-1)]'>{formatFileSize(activeEvent?.fileSize)}</div>
-                  <div className='text-[var(--color-text-3)]'>{t('settings.backup.successTime')}</div>
-                  <div className='text-[var(--color-text-1)]'>{activeEvent ? formatter.format(new Date(activeEvent.timestamp)) : '--'}</div>
+                <Progress percent={displayProgress} showText={false} strokeWidth={6} />
+              </div>
+            </div>
+
+            <AionSteps current={currentStep} size='small' className='overflow-x-auto'>
+              <AionSteps.Step title={t('settings.backup.step.connecting')} />
+              <AionSteps.Step title={t('settings.backup.step.snapshotting')} />
+              <AionSteps.Step title={t('settings.backup.step.collecting')} />
+              <AionSteps.Step title={t('settings.backup.step.packaging')} />
+              <AionSteps.Step title={t('settings.backup.step.uploading')} />
+              <AionSteps.Step title={t('settings.backup.step.success')} />
+            </AionSteps>
+
+            <Alert type='info' content={t('settings.backup.runningNotice')} />
+          </div>
+        )}
+
+        {isSuccess && (
+          <div className='space-y-16px'>
+            <div className='rounded-16px border border-solid border-[var(--color-success-light-3)] bg-[var(--color-success-light-1)] px-16px py-18px'>
+              <div className='flex items-start gap-10px'>
+                <CheckOne theme='filled' size='20' fill='var(--color-success-6)' />
+                <div className='min-w-0 flex-1'>
+                  <div className='text-17px font-600 text-[var(--color-text-1)]'>{t('settings.backup.successTitle')}</div>
+                  <div className='mt-6px text-13px text-[var(--color-text-3)]'>
+                    {t('settings.backup.successDescription', {
+                      count: autoCloseCountdown ?? 0,
+                      defaultValue: 'This backup package has been uploaded successfully. Closing in {{count}}s.',
+                    })}
+                  </div>
                 </div>
               </div>
-            ) : (
-              <>
-                <div className='rounded-16px border border-solid border-[var(--color-primary-light-4)] bg-[var(--color-primary-light-1)] px-14px py-14px'>
-                  <div className='flex flex-col gap-12px md:flex-row md:items-start md:justify-between'>
-                    <div className='flex items-start gap-12px text-[var(--color-primary-6)]'>
-                      <span className='inline-flex h-36px w-36px items-center justify-center rounded-full bg-[rgba(64,128,255,0.14)]'>
-                        <Loading theme='outline' size='18' className='animate-spin' />
-                      </span>
-                      <div>
-                        <div className='text-15px font-600 text-[var(--color-text-1)]'>{currentPhaseLabel}</div>
-                        <div className='mt-6px text-13px text-[var(--color-text-2)]'>
-                          {t('settings.backup.taskProgress', {
-                            defaultValue: '{{task}}: {{phase}}',
-                            task: t('settings.backup.taskLabel.backup'),
-                            phase: currentPhaseLabel,
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                    <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.elapsedTime', { time: formatElapsedTime(elapsedSeconds) })}</div>
-                  </div>
-                  <div className='mt-12px'>
-                    <Progress percent={displayProgress} showText={false} strokeWidth={6} />
-                  </div>
-                </div>
+            </div>
 
-                <AionSteps current={currentStep} size='small' className='overflow-x-auto'>
-                  <AionSteps.Step title={t('settings.backup.step.connecting')} />
-                  <AionSteps.Step title={t('settings.backup.step.snapshotting')} />
-                  <AionSteps.Step title={t('settings.backup.step.collecting')} />
-                  <AionSteps.Step title={t('settings.backup.step.packaging')} />
-                  <AionSteps.Step title={t('settings.backup.step.uploading')} />
-                  <AionSteps.Step title={t('settings.backup.step.success')} />
-                </AionSteps>
-
-                <Alert type='info' content={t('settings.backup.runningNotice')} />
-              </>
-            )}
+            <div className='grid gap-10px md:grid-cols-2'>
+              <div className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-12px py-10px'>
+                <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.fileNameLabel')}</div>
+                <div className='mt-4px break-all text-13px font-600 text-[var(--color-text-1)]'>{activeEvent?.fileName || fileName}</div>
+              </div>
+              <div className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-12px py-10px'>
+                <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.successProvider')}</div>
+                <div className='mt-4px text-13px font-600 text-[var(--color-text-1)]'>{settings.activeProvider === 'nutstore' ? t('settings.backup.nutstore') : t('settings.backup.webdav')}</div>
+              </div>
+              <div className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-12px py-10px'>
+                <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.remotePath')}</div>
+                <div className='mt-4px break-all text-13px font-600 text-[var(--color-text-1)]'>{settings.activeProvider === 'nutstore' ? settings.nutstore.remotePath : settings.webdav.remotePath}</div>
+              </div>
+              <div className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-12px py-10px'>
+                <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.successTime')}</div>
+                <div className='mt-4px text-13px font-600 text-[var(--color-text-1)]'>{activeEvent ? formatter.format(new Date(activeEvent.timestamp)) : '--'}</div>
+              </div>
+              <div className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-12px py-10px'>
+                <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.includeDefaultWorkspaceFiles')}</div>
+                <div className='mt-4px text-13px font-600 text-[var(--color-text-1)]'>{settings.includeDefaultWorkspaceFiles ? t('settings.backup.included') : t('settings.backup.notIncluded')}</div>
+              </div>
+              <div className='rounded-12px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-12px py-10px'>
+                <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.successSize')}</div>
+                <div className='mt-4px text-13px font-600 text-[var(--color-text-1)]'>{formatFileSize(activeEvent?.fileSize)}</div>
+              </div>
+            </div>
           </div>
         )}
       </div>
