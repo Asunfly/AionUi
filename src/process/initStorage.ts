@@ -301,6 +301,8 @@ const buildMessageListStorage = (conversation_id: string, dir: string) => {
 };
 
 const conversationHistoryProxy = (options: typeof _chatMessageFile, dir: string) => {
+  const getConversationHistoryFilePath = (conversation_id: string) => path.join(dir, 'aionui-chat-history', conversation_id + '.txt');
+
   return {
     ...options,
     async set(key: string, data: TMessage[]) {
@@ -318,6 +320,9 @@ const conversationHistoryProxy = (options: typeof _chatMessageFile, dir: string)
     backup(conversation_id: string) {
       const storage = buildMessageListStorage(conversation_id, dir);
       return storage.backup(path.join(dir, 'aionui-chat-history', 'backup', conversation_id + '_' + Date.now() + '.txt'));
+    },
+    async remove(key: string) {
+      await Promise.allSettled([options.remove(key as keyof ConversationHistoryData), fs.rm(getConversationHistoryFilePath(key), { recursive: true, force: true })]);
     },
   };
 };

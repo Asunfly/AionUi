@@ -18,6 +18,7 @@ import { isConversationPinned } from '../utils/groupingHelpers';
 
 type UseConversationActionsParams = {
   batchMode: boolean;
+  conversations: TChatConversation[];
   onSessionClick?: () => void;
   onBatchModeChange?: (value: boolean) => void;
   selectedConversationIds: Set<string>;
@@ -26,7 +27,7 @@ type UseConversationActionsParams = {
   markAsRead: (conversationId: string) => void;
 };
 
-export const useConversationActions = ({ batchMode, onSessionClick, onBatchModeChange, selectedConversationIds, setSelectedConversationIds, toggleSelectedConversation, markAsRead }: UseConversationActionsParams) => {
+export const useConversationActions = ({ batchMode, conversations, onSessionClick, onBatchModeChange, selectedConversationIds, setSelectedConversationIds, toggleSelectedConversation, markAsRead }: UseConversationActionsParams) => {
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renameModalName, setRenameModalName] = useState<string>('');
   const [renameModalId, setRenameModalId] = useState<string | null>(null);
@@ -98,17 +99,23 @@ export const useConversationActions = ({ batchMode, onSessionClick, onBatchModeC
     [id, navigate]
   );
 
+  const shouldWarnWorkspaceCleanup = useCallback((conversation: TChatConversation): boolean => {
+    return !conversation.extra?.customWorkspace && Boolean(conversation.extra?.workspace);
+  }, []);
+
   const handleDeleteClick = useCallback(
-    (conversationId: string) => {
+    (conversation: TChatConversation) => {
+      const shouldCleanupWorkspace = shouldWarnWorkspaceCleanup(conversation);
+      const content = shouldCleanupWorkspace ? `${t('conversation.history.deleteConfirm')}\n\n${t('conversation.history.deleteWorkspaceCleanupHint' as never)}` : t('conversation.history.deleteConfirm');
       Modal.confirm({
         title: t('conversation.history.deleteTitle'),
-        content: t('conversation.history.deleteConfirm'),
+        content,
         okText: t('conversation.history.confirmDelete'),
         cancelText: t('conversation.history.cancelDelete'),
         okButtonProps: { status: 'warning' },
         onOk: async () => {
           try {
-            const success = await removeConversation(conversationId);
+            const success = await removeConversation(conversation.id);
             if (success) {
               emitter.emit('chat.history.refresh');
               Message.success(t('conversation.history.deleteSuccess'));
@@ -125,7 +132,7 @@ export const useConversationActions = ({ batchMode, onSessionClick, onBatchModeC
         getPopupContainer: () => document.body,
       });
     },
-    [removeConversation, t]
+    [removeConversation, shouldWarnWorkspaceCleanup, t]
   );
 
   const handleBatchDelete = useCallback(() => {
@@ -134,9 +141,13 @@ export const useConversationActions = ({ batchMode, onSessionClick, onBatchModeC
       return;
     }
 
+    const selectedConversations = conversations.filter((conversation) => selectedConversationIds.has(conversation.id));
+    const shouldCleanupWorkspace = selectedConversations.some((conversation) => shouldWarnWorkspaceCleanup(conversation));
+    const content = shouldCleanupWorkspace ? `${t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size })}\n\n${t('conversation.history.batchDeleteWorkspaceCleanupHint' as never)}` : t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size });
+
     Modal.confirm({
       title: t('conversation.history.batchDelete'),
-      content: t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size }),
+      content,
       okText: t('conversation.history.confirmDelete'),
       cancelText: t('conversation.history.cancelDelete'),
       okButtonProps: { status: 'warning' },
@@ -163,7 +174,7 @@ export const useConversationActions = ({ batchMode, onSessionClick, onBatchModeC
       alignCenter: true,
       getPopupContainer: () => document.body,
     });
-  }, [onBatchModeChange, removeConversation, selectedConversationIds, t, setSelectedConversationIds]);
+  }, [conversations, onBatchModeChange, removeConversation, selectedConversationIds, shouldWarnWorkspaceCleanup, t, setSelectedConversationIds]);
 
   const handleEditStart = useCallback((conversation: TChatConversation) => {
     setRenameModalId(conversation.id);

@@ -21,6 +21,7 @@ import { copyFilesToDirectory, readDirectoryRecursive } from '../utils';
 import { computeOpenClawIdentityHash } from '../utils/openclawUtils';
 import WorkerManage from '../WorkerManage';
 import { migrateConversationToDatabase } from './migrationUtils';
+import { deleteConversationData } from '../services/conversation/deleteConversationData';
 
 export function initConversationBridge(): void {
   ipcBridge.openclawConversation.getRuntime.provider(async ({ conversation_id }) => {
@@ -144,7 +145,7 @@ export function initConversationBridge(): void {
     }
   });
 
-  ipcBridge.conversation.createWithConversation.provider(({ conversation, sourceConversationId }) => {
+  ipcBridge.conversation.createWithConversation.provider(async ({ conversation, sourceConversationId }) => {
     try {
       conversation.createTime = Date.now();
       conversation.modifyTime = Date.now();
@@ -193,11 +194,11 @@ export function initConversationBridge(): void {
           if (sourceMessages.total === newMessages.total) {
             // Verification passed, delete source conversation / 校验通过，删除源会话
             // ON DELETE CASCADE will handle message deletion / 级联删除会自动处理消息删除
-            const deleteResult = db.deleteConversation(sourceConversationId);
-            if (deleteResult.success) {
+            const deleteResult = await deleteConversationData(sourceConversationId);
+            if (deleteResult) {
               console.log(`[conversationBridge] Successfully migrated and deleted source conversation ${sourceConversationId}`);
             } else {
-              console.error(`[conversationBridge] Failed to delete source conversation ${sourceConversationId}: ${deleteResult.error}`);
+              console.error(`[conversationBridge] Failed to delete source conversation ${sourceConversationId}`);
             }
           } else {
             console.error('[conversationBridge] Migration integrity check failed: Message counts do not match.', {
@@ -260,13 +261,7 @@ export function initConversationBridge(): void {
       }
 
       // Delete conversation from database (will cascade delete messages due to foreign key)
-      const result = db.deleteConversation(id);
-      if (!result.success) {
-        console.error('[conversationBridge] Failed to delete conversation from database:', result.error);
-        return false;
-      }
-
-      return true;
+      return await deleteConversationData(id);
     } catch (error) {
       console.error('[conversationBridge] Failed to remove conversation:', error);
       return false;

@@ -14,6 +14,7 @@ import { app } from 'electron';
 import JSZip from 'jszip';
 import { ipcBridge } from '../../common';
 import { getSystemDir, getAssistantsDir } from '../initStorage';
+import { movePathToTrash } from '../services/system/TrashService';
 import { readDirectoryRecursive } from '../utils';
 
 // ============================================================================
@@ -636,13 +637,11 @@ export function initFsBridge(): void {
   ipcBridge.fs.removeEntry.provider(async ({ path: targetPath }) => {
     try {
       const stats = await fs.lstat(targetPath);
-      if (stats.isDirectory()) {
-        await fs.rm(targetPath, { recursive: true, force: true });
-      } else {
-        await fs.unlink(targetPath);
+      await movePathToTrash(targetPath);
 
-        // 发送流式删除事件到预览面板（用于关闭预览）
-        // Send streaming delete event to preview panel (to close preview)
+      // 发送流式删除事件到预览面板（用于关闭预览）
+      // Send streaming delete event to preview panel (to close preview)
+      if (!stats.isDirectory()) {
         try {
           const pathSegments = targetPath.split(path.sep);
           const fileName = pathSegments[pathSegments.length - 1];
