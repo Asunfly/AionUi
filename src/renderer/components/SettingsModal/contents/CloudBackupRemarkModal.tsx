@@ -287,6 +287,11 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
       }}
     >
       <div className='space-y-16px'>
+        <div className='space-y-8px'>
+          <div className='text-13px text-[var(--color-text-2)]'>{t('settings.backup.fileNameLabel')}</div>
+          <Input value={fileName} onChange={setFileName} placeholder={t('settings.backup.fileNamePlaceholder')} disabled={loadingSuggestedName || isRunning || isSuccess} />
+        </div>
+
         {!isRunning && !isSuccess && (
           <>
             <Alert type='warning' content={t('settings.backup.archiveNotice')} />
@@ -300,10 +305,6 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
                 <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.remotePath')}</div>
                 <div className='mt-4px break-all text-13px font-600 text-[var(--color-text-1)]'>{settings.activeProvider === 'nutstore' ? settings.nutstore.remotePath : settings.webdav.remotePath}</div>
               </div>
-            </div>
-            <div className='space-y-8px'>
-              <div className='text-13px text-[var(--color-text-2)]'>{t('settings.backup.fileNameLabel')}</div>
-              <Input value={fileName} onChange={setFileName} placeholder={t('settings.backup.fileNamePlaceholder')} disabled={loadingSuggestedName} />
             </div>
           </>
         )}
@@ -335,28 +336,27 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
             ) : (
               <>
                 <div className='rounded-16px border border-solid border-[var(--color-primary-light-4)] bg-[var(--color-primary-light-1)] px-14px py-14px'>
-                  <div className='flex flex-wrap items-center justify-between gap-10px'>
-                    <div className='flex items-center gap-8px text-[var(--color-primary-6)]'>
-                      <Loading theme='outline' size='18' className='animate-spin' />
-                      <span className='text-14px font-600'>{currentPhaseLabel}</span>
+                  <div className='flex flex-col gap-12px md:flex-row md:items-start md:justify-between'>
+                    <div className='flex items-start gap-12px text-[var(--color-primary-6)]'>
+                      <span className='inline-flex h-36px w-36px items-center justify-center rounded-full bg-[rgba(64,128,255,0.14)]'>
+                        <Loading theme='outline' size='18' className='animate-spin' />
+                      </span>
+                      <div>
+                        <div className='text-15px font-600 text-[var(--color-text-1)]'>{currentPhaseLabel}</div>
+                        <div className='mt-6px text-13px text-[var(--color-text-2)]'>
+                          {t('settings.backup.taskProgress', {
+                            defaultValue: '{{task}}: {{phase}}',
+                            task: t('settings.backup.taskLabel.backup'),
+                            phase: currentPhaseLabel,
+                          })}
+                        </div>
+                      </div>
                     </div>
                     <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.elapsedTime', { time: formatElapsedTime(elapsedSeconds) })}</div>
                   </div>
                   <div className='mt-12px'>
                     <Progress percent={displayProgress} showText={false} strokeWidth={6} />
                   </div>
-                  <div className='mt-10px text-13px text-[var(--color-text-2)]'>
-                    {t('settings.backup.taskProgress', {
-                      defaultValue: '{{task}}: {{phase}}',
-                      task: t('settings.backup.taskLabel.backup'),
-                      phase: currentPhaseLabel,
-                    })}
-                  </div>
-                </div>
-
-                <div className='space-y-8px'>
-                  <div className='text-13px text-[var(--color-text-2)]'>{t('settings.backup.fileNameLabel')}</div>
-                  <Input value={fileName} readOnly />
                 </div>
 
                 <AionSteps current={currentStep} size='small' className='overflow-x-auto'>

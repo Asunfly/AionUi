@@ -151,7 +151,7 @@ vi.mock('swr', () => ({
 import SystemModalContent from '../../src/renderer/components/SettingsModal/contents/SystemModalContent';
 
 describe('SystemModalContent nutstore backup section', () => {
-  it('keeps the config collapsed by default, then shows the fixed Nutstore URL and help link after expanding', async () => {
+  it('keeps the entire backup panel collapsed by default, then shows the fixed Nutstore URL and help link after expanding', async () => {
     render(<SystemModalContent />);
 
     await waitFor(() => {
@@ -159,6 +159,7 @@ describe('SystemModalContent nutstore backup section', () => {
     });
 
     expect(screen.queryByDisplayValue(NUTSTORE_WEBDAV_HOST)).not.toBeInTheDocument();
+    expect(screen.queryByText('settings.backup.scopeSummary')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'settings.backup.expandConfig' }));
 
@@ -169,7 +170,8 @@ describe('SystemModalContent nutstore backup section', () => {
     const urlInput = screen.getByDisplayValue(NUTSTORE_WEBDAV_HOST) as HTMLInputElement;
     expect(urlInput.readOnly).toBe(true);
     expect(screen.getByText('settings.backup.nutstorePasswordNotice')).toBeInTheDocument();
-    expect(screen.getByText('settings.backup.nutstoreWebdavNotice')).toBeInTheDocument();
+    expect(screen.queryByText('settings.backup.nutstoreWebdavNotice')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'settings.backup.testConnection' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'settings.backup.nutstoreHelpAction' }));
     expect(systemMocks.openExternal).toHaveBeenCalledWith(NUTSTORE_HELP_URL);
@@ -188,10 +190,12 @@ describe('SystemModalContent nutstore backup section', () => {
     render(<SystemModalContent />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'settings.backup.testConnection' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'settings.backup.expandConfig' })).toBeInTheDocument();
     });
 
-    expect(screen.getByRole('button', { name: 'settings.backup.testConnection' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'settings.backup.expandConfig' }));
+
+    expect(screen.queryByRole('button', { name: 'settings.backup.testConnection' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'settings.backup.manualBackup' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'settings.backup.restore' })).toBeDisabled();
   });

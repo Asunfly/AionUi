@@ -7,7 +7,7 @@
 export const CLOUD_BACKUP_SCHEMA_VERSION = 1;
 export const DEFAULT_CLOUD_BACKUP_REMOTE_PATH = '/AionUibackup';
 export const NUTSTORE_WEBDAV_HOST = 'https://dav.jianguoyun.com/dav';
-export const NUTSTORE_HELP_URL = 'https://docs.cherry-ai.com/pre-basic/data-settings/webdav';
+export const NUTSTORE_HELP_URL = 'https://github.com/iOfficeAI/AionUi/blob/main/docs/jianguoyun-backup-guide.md';
 export const MANAGED_CLOUD_BACKUP_FILE_PREFIX = 'AionUi_v';
 export const MANAGED_CLOUD_BACKUP_FILE_PATTERN = /^AionUi_v.+\.zip$/i;
 export const AUTO_BACKUP_INTERVAL_OPTIONS = [0, 1, 6, 12, 24] as const;

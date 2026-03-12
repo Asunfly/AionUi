@@ -127,6 +127,7 @@ describe('cloud backup modals', () => {
     );
 
     expect(screen.getByText('uploading')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip')).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: /cancel|取消/i }));
     expect(modalMocks.modalConfirm).toHaveBeenCalledTimes(1);
@@ -197,5 +198,30 @@ describe('cloud backup modals', () => {
     expect(confirmButton).not.toBeNull();
     fireEvent.click(confirmButton!);
     expect(onConfirm).toHaveBeenCalledWith('AionUi_v1.8.23_20260306-154530_DEF456_win32-x64_HOST_B.zip');
+  });
+
+  it('paginates remote backups in pages of 20 items', async () => {
+    const onConfirm = vi.fn();
+    modalMocks.listCloudRemotePackages.mockResolvedValue(
+      Array.from({ length: 21 }, (_, index) => ({
+        fileName: `AionUi_v1.8.23_202603${String(index + 1).padStart(2, '0')}-101010_TEST_${index}.zip`,
+        modifiedTime: `2026-03-${String(Math.min(index + 1, 28)).padStart(2, '0')}T10:10:10.000Z`,
+        size: 1024 + index,
+      }))
+    );
+
+    render(<CloudBackupRestoreModal visible settings={settings} onCancel={() => undefined} onConfirm={onConfirm} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('AionUi_v1.8.23_20260301-101010_TEST_0.zip')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('AionUi_v1.8.23_20260321-101010_TEST_20.zip')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('第 2 页'));
+
+    await waitFor(() => {
+      expect(screen.getByText('AionUi_v1.8.23_20260321-101010_TEST_20.zip')).toBeInTheDocument();
+    });
   });
 });
