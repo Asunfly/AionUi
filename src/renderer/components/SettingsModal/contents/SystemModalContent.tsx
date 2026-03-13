@@ -18,7 +18,7 @@ import { refreshCloudBackupScheduler } from '@/renderer/services/cloudBackupSche
 import { iconColors } from '@/renderer/theme/colors';
 import { isElectronDesktop } from '@/renderer/utils/platform';
 import { Alert, Button, Form, Input, Message, Modal, Select, Switch, Tooltip } from '@arco-design/web-react';
-import { Attention, CheckOne, CloudStorage, Down, FolderOpen, Heartbeat, Info, LinkCloud, Loading, Right, Up } from '@icon-park/react';
+import { Attention, CheckOne, CloudStorage, Down, FolderOpen, Heartbeat, Info, LinkCloud, Loading, Up } from '@icon-park/react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import useSWR from 'swr';
@@ -92,26 +92,33 @@ const PreferenceRow: React.FC<{
 const FieldHint: React.FC<{
   content: React.ReactNode;
   ariaLabel: string;
-}> = ({ content, ariaLabel }) => (
+  onClick?: () => void;
+}> = ({ content, ariaLabel, onClick }) => (
   <Tooltip content={content} position='top'>
-    <button type='button' aria-label={ariaLabel} className='inline-flex h-20px w-20px flex-shrink-0 items-center justify-center self-center border-none bg-transparent p-0 leading-none text-[var(--color-text-3)] transition-colors hover:text-[var(--color-primary-6)]'>
-      <Info theme='outline' size='14' fill='currentColor' />
+    <button type='button' aria-label={ariaLabel} className='inline-flex h-18px w-18px flex-shrink-0 items-center justify-center border-none bg-transparent p-0 text-[var(--color-text-3)] align-middle leading-none transition-colors hover:text-[var(--color-primary-6)]' onClick={onClick}>
+      <span className='block leading-none'>
+        <Info theme='outline' size='14' fill='currentColor' />
+      </span>
     </button>
   </Tooltip>
 );
 
 const BackupField: React.FC<{
-  label: string;
+  label: React.ReactNode;
+  hintAriaLabel?: string;
   hint?: React.ReactNode;
+  hintAction?: () => void;
   alignStart?: boolean;
   children: React.ReactNode;
-}> = ({ label, hint, alignStart = false, children }) => (
+}> = ({ label, hintAriaLabel, hint, hintAction, alignStart = false, children }) => (
   <div className={`grid gap-10px md:grid-cols-[156px_1fr] ${alignStart ? 'items-start' : 'items-center'}`}>
-    <div className={`flex gap-6px ${alignStart ? 'items-start pt-6px' : 'min-h-32px items-center'}`}>
-      <div className='text-13px text-[var(--color-text-2)]'>{label}</div>
-      {hint ? <FieldHint content={hint} ariaLabel={label} /> : null}
+    <div className={alignStart ? 'flex items-start pt-6px' : 'flex min-h-32px items-center'}>
+      <div className='flex min-w-0 items-center gap-4px'>
+        <div className='flex min-h-20px min-w-0 items-center text-13px leading-[20px] text-[var(--color-text-2)]'>{label}</div>
+        {hint ? <FieldHint content={hint} ariaLabel={hintAriaLabel || (typeof label === 'string' ? label : '')} onClick={hintAction} /> : null}
+      </div>
     </div>
-    <div>{children}</div>
+    <div className={alignStart ? 'min-w-0' : 'flex min-h-32px min-w-0 items-center'}>{children}</div>
   </div>
 );
 
@@ -119,9 +126,10 @@ const BackupSectionCard: React.FC<{
   title: string;
   description?: React.ReactNode;
   headerSlot?: React.ReactNode;
+  className?: string;
   children: React.ReactNode;
-}> = ({ title, description, headerSlot, children }) => (
-  <div className='rounded-16px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-14px py-14px md:px-16px'>
+}> = ({ title, description, headerSlot, className, children }) => (
+  <div className={`rounded-16px border border-solid border-[var(--color-border-2)] bg-[var(--fill-1)] px-14px py-14px md:px-16px ${className || ''}`}>
     <div className='flex items-start justify-between gap-12px'>
       <div>
         <div className='text-14px font-600 text-[var(--color-text-1)]'>{title}</div>
@@ -449,6 +457,7 @@ const SystemModalContent: React.FC = () => {
           setRestoreResult(result);
         })
         .catch((restoreProcessError) => {
+          console.error('[CloudBackup] Restore failed:', restoreProcessError);
           setRestoreError(restoreProcessError instanceof Error ? restoreProcessError.message : t('settings.backup.error.unknown'));
         });
     },
@@ -466,9 +475,22 @@ const SystemModalContent: React.FC = () => {
   const lastBackupTime = backupSettings?.lastBackupSuccessAt ? compactDateTimeFormatter.format(new Date(backupSettings.lastBackupSuccessAt)).replace(',', '') : t('settings.backup.never');
   const connectionTestAction = connectionCoreReady ? (
     <Tooltip content={t('settings.backup.testConnection')} position='top'>
-      <button type='button' aria-label={t('settings.backup.testConnection')} className='mr-[-4px] inline-flex h-28px w-28px items-center justify-center rounded-8px border-none bg-transparent p-0 text-[var(--color-text-3)] transition-colors hover:bg-[var(--fill-1)] hover:text-[var(--color-primary-6)]' onMouseDown={(event) => event.preventDefault()} onClick={() => void handleTestConnection()}>
+      <span
+        role='button'
+        tabIndex={0}
+        aria-label={t('settings.backup.testConnection')}
+        className='icon-hover inline-flex items-center justify-center text-[var(--color-text-3)] transition-colors hover:text-[var(--color-primary-6)]'
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => void handleTestConnection()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            void handleTestConnection();
+          }
+        }}
+      >
         {testingConnection ? <Loading theme='outline' size='16' className='animate-spin' fill='currentColor' /> : <Heartbeat theme='outline' size='16' fill='currentColor' />}
-      </button>
+      </span>
     </Tooltip>
   ) : null;
 
@@ -515,41 +537,26 @@ const SystemModalContent: React.FC = () => {
               !isDesktop || !backupSettings ? (
                 <Alert type='info' content={t('settings.backup.desktopOnly')} />
               ) : (
-                <div className='grid gap-14px xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]'>
-                  <div className='space-y-14px'>
-                    <BackupSectionCard title={t('settings.backup.connectionSection')}>
+                <div className='grid items-stretch gap-14px xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]'>
+                  <div className='flex h-full min-h-0 flex-col'>
+                    <BackupSectionCard title={t('settings.backup.connectionSection')} className='h-full'>
                       <BackupField label={t('settings.backup.provider')}>
-                        <Select value={activeProvider} onChange={(value) => updateBackupSettings((current) => ({ ...current, activeProvider: value as TBackupProvider }))}>
+                        <Select className='backup-select-control' value={activeProvider} onChange={(value) => updateBackupSettings((current) => ({ ...current, activeProvider: value as TBackupProvider }))}>
                           <Select.Option value='webdav'>{t('settings.backup.webdav')}</Select.Option>
                           <Select.Option value='nutstore'>{t('settings.backup.nutstore')}</Select.Option>
                         </Select>
                       </BackupField>
 
-                      {activeProvider === 'nutstore' && (
-                        <div className='rounded-14px border border-solid border-[var(--color-primary-light-4)] bg-[rgba(64,128,255,0.08)] px-12px py-12px'>
-                          <div className='flex flex-col gap-10px md:flex-row md:items-center md:justify-between'>
-                            <div className='flex min-w-0 items-center gap-8px text-13px text-[var(--color-text-1)]'>
-                              <CloudStorage theme='outline' size='14' fill='currentColor' />
-                              <span>{t('settings.backup.providerNutstoreDescription')}</span>
-                            </div>
-                            <button type='button' className='inline-flex items-center gap-4px self-start whitespace-nowrap border-none bg-transparent p-0 text-12px font-600 text-[var(--color-primary-6)] transition-opacity hover:opacity-80' onClick={() => void ipcBridge.shell.openExternal.invoke(NUTSTORE_HELP_URL)}>
-                              {t('settings.backup.nutstoreHelpAction')}
-                              <Right theme='outline' size='12' fill='currentColor' />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
                       {activeProvider === 'webdav' ? (
                         <>
                           <BackupField label={t('settings.backup.link')}>
-                            <Input value={backupSettings.webdav.host} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, host: value } }))} placeholder='https://example.com/dav' suffix={connectionTestAction} spellCheck={false} />
+                            <Input className='backup-action-input' value={backupSettings.webdav.host} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, host: value } }))} placeholder='https://example.com/dav' suffix={connectionTestAction} spellCheck={false} />
                           </BackupField>
                           <BackupField label={t('settings.backup.account')}>
                             <Input value={backupSettings.webdav.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, username: value } }))} spellCheck={false} />
                           </BackupField>
-                          <BackupField label={t('settings.backup.password')}>
-                            <Input.Password value={backupSettings.webdav.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, password: value } }))} />
+                          <BackupField label={t('settings.backup.passwordOnly')}>
+                            <Input.Password className='backup-action-input' value={backupSettings.webdav.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, password: value } }))} />
                           </BackupField>
                           <BackupField label={t('settings.backup.remotePath')} hint={t('settings.backup.remotePathHint')}>
                             <Input value={backupSettings.webdav.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, remotePath: value } }))} placeholder='/AionUibackup' spellCheck={false} />
@@ -558,13 +565,26 @@ const SystemModalContent: React.FC = () => {
                       ) : (
                         <>
                           <BackupField label={t('settings.backup.link')}>
-                            <Input value={NUTSTORE_WEBDAV_HOST} readOnly className='opacity-75' suffix={connectionTestAction} spellCheck={false} />
+                            <Input
+                              value={NUTSTORE_WEBDAV_HOST}
+                              readOnly
+                              className='backup-action-input backup-readonly-input'
+                              suffix={connectionTestAction}
+                              spellCheck={false}
+                              onFocus={(event) => event.target.blur()}
+                              onMouseDown={(event) => {
+                                const target = event.target as HTMLElement;
+                                if (target.tagName === 'INPUT') {
+                                  event.preventDefault();
+                                }
+                              }}
+                            />
                           </BackupField>
                           <BackupField label={t('settings.backup.account')}>
                             <Input value={backupSettings.nutstore.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, username: value } }))} spellCheck={false} />
                           </BackupField>
-                          <BackupField label={t('settings.backup.password')}>
-                            <Input.Password value={backupSettings.nutstore.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, password: value } }))} />
+                          <BackupField label={<span className='font-500 text-[var(--color-primary-6)]'>{t('settings.backup.nutstoreAppPassword')}</span>} hint={t('settings.backup.nutstoreAppPasswordGuideTooltip')} hintAction={() => void ipcBridge.shell.openExternal.invoke(NUTSTORE_HELP_URL)}>
+                            <Input.Password className='backup-action-input nutstore-app-password-input' value={backupSettings.nutstore.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, password: value } }))} placeholder={t('settings.backup.nutstoreAppPasswordPlaceholder')} />
                           </BackupField>
                           <BackupField label={t('settings.backup.remotePath')} hint={t('settings.backup.remotePathHint')}>
                             <Input value={backupSettings.nutstore.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, remotePath: value } }))} placeholder='/AionUibackup' spellCheck={false} />
@@ -588,7 +608,7 @@ const SystemModalContent: React.FC = () => {
                     </BackupSectionCard>
                   </div>
 
-                  <div className='space-y-14px'>
+                  <div className='flex h-full min-h-0 flex-col gap-14px'>
                     <BackupSectionCard title={t('settings.backup.policySection')}>
                       <BackupField label={t('settings.backup.autoBackupEnabled')}>
                         <Switch checked={backupSettings.autoBackupEnabled} onChange={(checked) => updateBackupSettings((current) => ({ ...current, autoBackupEnabled: checked }))} />
@@ -611,34 +631,38 @@ const SystemModalContent: React.FC = () => {
                           ))}
                         </Select>
                       </BackupField>
-                      <BackupField label={t('settings.backup.includeDefaultWorkspaceFiles')} hint={t('settings.backup.defaultWorkspaceNotice')} alignStart>
+                      <BackupField label={t('settings.backup.includeDefaultWorkspaceFiles')} hint={t('settings.backup.defaultWorkspaceNotice')}>
                         <Switch checked={backupSettings.includeDefaultWorkspaceFiles} onChange={(checked) => updateBackupSettings((current) => ({ ...current, includeDefaultWorkspaceFiles: checked }))} />
                       </BackupField>
                     </BackupSectionCard>
 
-                    <div className={`rounded-16px border border-solid px-14px py-14px md:px-16px ${statusTone.cardClass}`}>
-                      <div className='flex items-start justify-between gap-12px'>
-                        <div className='min-w-0 flex items-start gap-10px'>
-                          <span className={`inline-flex h-20px w-20px items-center justify-center ${statusTone.iconClass}`}>{renderBackupStatusIcon(effectiveStatus)}</span>
-                          <div className='min-w-0'>
-                            <div className='text-13px font-500 text-[var(--color-text-1)]'>{t('settings.backup.lastBackupPanelTitle')}</div>
-                            <div className='mt-6px break-all text-13px leading-5 text-[var(--color-text-2)]'>{currentStatusText}</div>
-                          </div>
-                        </div>
-                        <div className='flex items-center gap-6px whitespace-nowrap text-12px text-[var(--color-text-2)]'>
-                          {renderBackupProviderIcon(activeProvider, 16)}
-                          <span>{activeProviderLabel}</span>
-                        </div>
-                      </div>
+                    <div className={`min-h-0 flex flex-1 overflow-hidden rounded-16px border border-solid px-14px py-14px md:px-16px ${statusTone.cardClass}`}>
+                      <div className='flex h-full min-h-0 flex-1 items-start gap-10px'>
+                        <span className={`mt-1px inline-flex h-20px w-20px flex-shrink-0 items-center justify-center ${statusTone.iconClass}`}>{renderBackupStatusIcon(effectiveStatus)}</span>
 
-                      <div className='mt-12px grid gap-10px md:grid-cols-2'>
-                        <div className='rounded-12px bg-[rgba(255,255,255,0.45)] px-12px py-10px'>
-                          <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.lastSuccessTime')}</div>
-                          <div className='mt-4px text-13px font-600 text-[var(--color-text-1)]'>{lastBackupTime}</div>
-                        </div>
-                        <div className='rounded-12px bg-[rgba(255,255,255,0.45)] px-12px py-10px'>
-                          <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.remotePath')}</div>
-                          <div className='mt-4px break-all text-13px font-600 text-[var(--color-text-1)]'>{currentProviderPath}</div>
+                        <div className='min-w-0 flex h-full flex-1 flex-col'>
+                          <div className='flex items-start justify-between gap-12px'>
+                            <div className='text-13px font-500 text-[var(--color-text-1)]'>{t('settings.backup.lastBackupPanelTitle')}</div>
+                            <div className='flex flex-shrink-0 items-center gap-6px whitespace-nowrap text-12px text-[var(--color-text-2)]'>
+                              {renderBackupProviderIcon(activeProvider, 16)}
+                              <span>{activeProviderLabel}</span>
+                            </div>
+                          </div>
+
+                          <div title={currentStatusText} className='backup-status-text-clamp mt-6px break-all text-13px leading-5 text-[var(--color-text-2)]'>
+                            {currentStatusText}
+                          </div>
+
+                          <div className='mt-auto grid gap-10px pt-12px md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]'>
+                            <div className='rounded-12px bg-[rgba(255,255,255,0.45)] px-12px py-10px'>
+                              <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.lastSuccessTime')}</div>
+                              <div className='mt-4px text-13px font-600 text-[var(--color-text-1)]'>{lastBackupTime}</div>
+                            </div>
+                            <div className='rounded-12px bg-[rgba(255,255,255,0.45)] px-12px py-10px'>
+                              <div className='text-12px text-[var(--color-text-3)]'>{t('settings.backup.remotePath')}</div>
+                              <div className='mt-4px break-all text-13px font-600 text-[var(--color-text-1)]'>{currentProviderPath}</div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>

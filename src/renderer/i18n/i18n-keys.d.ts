@@ -839,6 +839,7 @@ export type I18nKey =
   | 'settings.backup.restoreModalTitle'
   | 'settings.backup.restoreProgressTitle'
   | 'settings.backup.restoreRestartCountdown'
+  | 'settings.backup.restoreRestartManual'
   | 'settings.backup.restoreSourceDescription'
   | 'settings.backup.restoreSourceTitle'
   | 'settings.backup.restoreStep.completed'

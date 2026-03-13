@@ -22,6 +22,11 @@ const backupServiceMocks = vi.hoisted(() => ({
   getDatabase: vi.fn(),
 }));
 
+const restoreRecoveryMocks = vi.hoisted(() => ({
+  preparePendingRestoreRecovery: vi.fn(),
+  confirmPendingRestoreRecovery: vi.fn(),
+}));
+
 backupServiceMocks.getDatabase.mockImplementation(() => ({
   backup: backupServiceMocks.dbBackup,
   getUserConversations: vi.fn(() => ({
@@ -88,6 +93,8 @@ vi.mock('../../src/process/services/backup/backupPaths', () => ({
   getManagedBackupEntries: vi.fn(() => []),
 }));
 
+vi.mock('../../src/process/services/backup/restoreRecovery', () => restoreRecoveryMocks);
+
 vi.mock('../../src/process/services/backup/WebDavClient', () => ({
   CloudWebDavClient: class {
     checkConnection = backupServiceMocks.checkConnection;
@@ -129,6 +136,8 @@ describe('BackupService', () => {
     backupServiceMocks.uploadFile.mockResolvedValue(undefined);
     backupServiceMocks.deleteFile.mockResolvedValue(undefined);
     backupServiceMocks.dbBackup.mockResolvedValue(undefined);
+    restoreRecoveryMocks.preparePendingRestoreRecovery.mockResolvedValue(undefined);
+    restoreRecoveryMocks.confirmPendingRestoreRecovery.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -235,6 +244,7 @@ describe('BackupService', () => {
         errorCode: 'package_invalid',
       })
     );
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).not.toHaveBeenCalled();
   });
 
   it('restores a valid backup package, returns its manifest, and emits request-scoped restore events', async () => {
@@ -281,6 +291,44 @@ describe('BackupService', () => {
         requestId: 'restore-req',
       })
     );
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
+    expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).not.toHaveBeenCalled();
+  });
+
+  it('cleans pending restore recovery state when restore fails after snapshotting', async () => {
+    const service = new BackupService();
+    const zip = new JSZip();
+    const manifest = {
+      backupSchemaVersion: 1,
+      appVersion: '1.8.23',
+      dbVersion: CURRENT_DB_VERSION,
+      createdAt: '2026-03-07T15:45:30.000Z',
+      providerType: 'webdav' as const,
+      sourcePlatform: 'linux',
+      sourceArch: 'x64',
+      sourceHostname: 'OFFICE-PC',
+      includedSections: ['database'],
+      defaultWorkspaceFiles: {
+        included: false,
+        relativeRoots: [] as string[],
+      },
+      sourceSystemDirs: {
+        cacheDir: 'cache',
+        workDir: 'work',
+        dataDir: 'data',
+        configDir: 'config',
+      },
+      fileName: 'AionUi_v1_test.zip',
+    };
+    zip.file('manifest.json', JSON.stringify(manifest));
+    zip.file('payload/db/aionui.db', 'sqlite');
+    backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
+
+    (service as unknown as { rewriteManagedWorkspacePaths: (value: unknown) => Promise<void> }).rewriteManagedWorkspacePaths = vi.fn().mockRejectedValue(new Error('restore failed'));
+
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req')).rejects.toThrow('restore failed');
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
+    expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).toHaveBeenCalled();
   });
 
   it('cancels an in-flight backup task and emits the canceled error code', async () => {

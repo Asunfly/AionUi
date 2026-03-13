@@ -15,6 +15,7 @@ import { ipcBridge } from './common';
 import { AION_ASSET_PROTOCOL } from './extensions/assetProtocol';
 import { initializeProcess } from './process';
 import { ProcessConfig } from './process/initStorage';
+import { beginPendingRestoreRecoveryVerification, confirmPendingRestoreRecovery, type TRestoreRecoveryStartupStatus } from './process/services/backup/restoreRecovery';
 import { loadShellEnvironmentAsync, mergePaths } from './process/utils/shellEnv';
 import { initializeAcpDetector } from './process/bridge';
 import { registerWindowMaximizeListeners } from './process/bridge/windowControlsBridge';
@@ -226,6 +227,20 @@ const getSwitchValue = (flag: string): string | undefined => {
 const hasCommand = (cmd: string) => process.argv.includes(cmd);
 
 const WEBUI_CONFIG_FILE = 'webui.config.json';
+
+let restoreRecoveryStatus: TRestoreRecoveryStartupStatus = 'none';
+let restoreRecoveryConfirmed = false;
+
+const confirmRestoreRecoveryIfNeeded = () => {
+  if (restoreRecoveryConfirmed || restoreRecoveryStatus !== 'verify') {
+    return;
+  }
+
+  restoreRecoveryConfirmed = true;
+  void confirmPendingRestoreRecovery().catch((error) => {
+    console.error('[RestoreRecovery] Failed to confirm restored startup:', error);
+  });
+};
 
 type WebUIUserConfig = {
   port?: number | string;
@@ -459,6 +474,7 @@ const createWindow = (): void => {
   mainWindow.webContents.once('did-finish-load', () => {
     console.log('[AionUi] Renderer did-finish-load');
     showWindow();
+    confirmRestoreRecoveryIfNeeded();
   });
   // Fallback: show window after 5s even if events don't fire (e.g. loadURL failure)
   setTimeout(showWindow, 5000);
@@ -643,6 +659,12 @@ const handleAppReady = async (): Promise<void> => {
     return;
   }
 
+  try {
+    restoreRecoveryStatus = await beginPendingRestoreRecoveryVerification();
+  } catch (error) {
+    console.error('[RestoreRecovery] Failed to verify pending restore recovery:', error);
+  }
+
   if (isResetPasswordMode) {
     // Handle password reset without creating window
     try {
@@ -668,6 +690,7 @@ const handleAppReady = async (): Promise<void> => {
     const resolvedPort = resolveWebUIPort(userConfigInfo.config);
     const allowRemote = resolveRemoteAccess(userConfigInfo.config);
     await startWebServer(resolvedPort, allowRemote);
+    confirmRestoreRecoveryIfNeeded();
 
     // Keep the process alive in WebUI mode by preventing default quit behavior.
     // On Linux headless (systemd), Electron may attempt to quit when no windows exist.

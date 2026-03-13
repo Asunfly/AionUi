@@ -38,6 +38,7 @@ export function initApplicationBridge(): void {
     }
 
     app.relaunch();
+
     app.exit(0);
     return Promise.resolve();
   });

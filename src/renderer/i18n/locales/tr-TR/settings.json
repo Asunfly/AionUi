@@ -112,6 +112,9 @@
     "nutstorePasswordNotice": "Normal web giriş parolası yerine Nutstore uygulama parolasını kullanın.",
     "nutstoreWebdavNotice": "Nutstore modu da özünde standart WebDAV yedeklemesidir ve WebDAV ana makinesi resmi Nutstore adresine sabitlenmiştir.",
     "nutstoreHelpAction": "Nutstore WebDAV açıklamasını görüntüle",
+    "nutstoreAppPassword": "Uygulama Parolası",
+    "nutstoreAppPasswordPlaceholder": "Hesap parolanızı değil, uygulama parolasını girin.",
+    "nutstoreAppPasswordGuideTooltip": "Uygulama parolasının nasıl alınacağını görmek için tıklayın",
     "link": "Bağlantı",
     "account": "Hesap",
     "expandConfig": "Ayrıntıları aç",
@@ -120,6 +123,7 @@
     "connectionIncompleteBadge": "Kurulum gerekli",
     "connectionReadyHint": "{{provider}} bağlantı bilgileri büyük ölçüde hazır. Yedekleme veya geri yükleme öncesi bağlantıyı test edin.",
     "fillConnectionFieldsHint": "Bağlantıyı test etmek için bağlantı, hesap ve parolayı doldurun.",
+    "passwordOnly": "Parola",
     "remotePathHint": "Genelde varsayılan klasörü bırakmak yeterlidir. Yalnızca ortamları veya hesapları ayırmanız gerekiyorsa değiştirin.",
     "defaultWorkspaceNotice": "Yalnızca mevcut çalışma dizini altında uygulama tarafından otomatik oluşturulan varsayılan çalışma alanları yedeklenir. Kullanıcının elle seçtiği veya taşınmış harici çalışma alanları buna dahil edilmez. Kapalıyken bu mod daha hafif bir yedek alır; açıkken başka bir cihaza geri yüklerken varsayılan çalışma alanı dosyaları da geri yüklenir, ancak süre ve paket boyutu artar.",
     "scopeIncludedTitle": "Yedeğe dahil olanlar",
@@ -164,11 +168,11 @@
       "invalidEndpoint": "WebDAV uç noktası geçersiz. URL'nin geçerli bir WebDAV hizmetine işaret ettiğini kontrol edin.",
       "networkError": "WebDAV hizmetine ulaşılamadı. Lütfen ağı veya sunucu durumunu kontrol edin.",
       "remotePathError": "Uzak klasör kullanılamıyor. Lütfen uzak klasör ayarını kontrol edin.",
-      "canceled": "Yedekleme görevi iptal edildi.",
+      "canceled": "Görev iptal edildi.",
       "taskConflict": "Başka bir yedekleme veya geri yükleme görevi zaten çalışıyor.",
       "unsupportedFile": "Seçilen yedek dosyası desteklenmiyor.",
       "packageInvalid": "Yedek paketi geçersiz veya mevcut uygulama sürümüyle uyumlu değil.",
-      "unknown": "Bilinmeyen bir hata nedeniyle yedekleme başarısız oldu."
+      "unknown": "Bilinmeyen bir hata nedeniyle işlem başarısız oldu."
     }
   },
   "gemini": "Gemini",

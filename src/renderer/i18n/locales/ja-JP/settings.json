@@ -112,6 +112,9 @@
     "nutstorePasswordNotice": "通常の Web ログイン用パスワードではなく、Nutstore のアプリパスワードを使用してください。",
     "nutstoreWebdavNotice": "Nutstore モードも実体は標準 WebDAV バックアップであり、WebDAV ホストは Nutstore 公式アドレスに固定されています。",
     "nutstoreHelpAction": "Nutstore WebDAV の説明を見る",
+    "nutstoreAppPassword": "アプリパスワード",
+    "nutstoreAppPasswordPlaceholder": "アカウントのパスワードではなく、アプリパスワードを入力してください。",
+    "nutstoreAppPasswordGuideTooltip": "クリックしてアプリパスワードの取得方法を見る",
     "link": "リンク",
     "account": "アカウント",
     "expandConfig": "詳細を表示",
@@ -120,6 +123,7 @@
     "connectionIncompleteBadge": "設定が必要",
     "connectionReadyHint": "{{provider}} の接続情報はほぼ揃っています。バックアップや復元の前に接続テストを行ってください。",
     "fillConnectionFieldsHint": "リンク、アカウント、パスワードを入力すると接続テストを実行できます。",
+    "passwordOnly": "パスワード",
     "remotePathHint": "通常は既定のフォルダのままで問題ありません。環境やアカウントを分ける場合のみ変更してください。",
     "defaultWorkspaceNotice": "現在の作業ディレクトリ配下でアプリが自動作成したデフォルトワークスペースのみをバックアップします。ユーザーが手動指定した外部ワークスペースや移行済みワークスペースは含まれません。オフにすると軽量バックアップになり、オンにすると別の端末へ復元する際にデフォルトワークスペースのファイルも一緒に復元できますが、バックアップ時間と容量が増えます。",
     "scopeIncludedTitle": "バックアップ対象",
@@ -164,11 +168,11 @@
       "invalidEndpoint": "WebDAV エンドポイントが無効です。URL が有効な WebDAV サービスを指しているか確認してください。",
       "networkError": "WebDAV サービスに接続できません。ネットワークまたはサーバー状態を確認してください。",
       "remotePathError": "リモートフォルダを利用できません。リモートフォルダ設定を確認してください。",
-      "canceled": "バックアップタスクはキャンセルされました。",
+      "canceled": "タスクはキャンセルされました。",
       "taskConflict": "他のバックアップまたは復元タスクが既に実行中です。",
       "unsupportedFile": "選択したバックアップファイルはサポートされていません。",
       "packageInvalid": "バックアップパッケージが無効か、現在のアプリ版と互換性がありません。",
-      "unknown": "不明なエラーでバックアップに失敗しました。"
+      "unknown": "不明なエラーで操作に失敗しました。"
     }
   },
   "gemini": "Gemini",

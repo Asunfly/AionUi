@@ -22,6 +22,7 @@ import { copyDirectoryRecursively, ensureDirectory } from '@/process/utils';
 import type { IManagedBackupEntry } from './backupPaths';
 import { getBackupPathContext, getCurrentManagedBackupEntries, getManagedBackupEntries } from './backupPaths';
 import { BackupTaskError, getBackupErrorCode, isAbortLikeError } from './BackupTaskError';
+import { confirmPendingRestoreRecovery, preparePendingRestoreRecovery } from './restoreRecovery';
 import { CloudWebDavClient } from './WebDavClient';
 import { collectManagedWorkspaceRelativePaths, getManagedWorkspaceRelativePath, normalizeManagedWorkspaceRelativePath, remapConversationExtraPaths } from './workspaceBackup';
 
@@ -282,6 +283,7 @@ export class BackupService {
       const tempDir = await this.createTempDir('restore');
       const stagingDir = path.join(tempDir, 'staging');
       const rollbackDir = path.join(tempDir, 'rollback');
+      let pendingRecoveryPrepared = false;
 
       try {
         this.emitTask({ task: 'restore', phase: 'downloading', fileName, requestId });
@@ -296,6 +298,13 @@ export class BackupService {
         const currentEntries = getCurrentManagedBackupEntries();
         await this.createRollbackSnapshot(currentEntries, rollbackDir);
         await this.createWorkspaceRollbackSnapshot(manifest.defaultWorkspaceFiles.relativeRoots, rollbackDir);
+        try {
+          await preparePendingRestoreRecovery(currentEntries, manifest.defaultWorkspaceFiles.relativeRoots, fileName, manifest.sourcePlatform);
+          pendingRecoveryPrepared = true;
+        } catch (prepareError) {
+          await confirmPendingRestoreRecovery().catch((): void => undefined);
+          throw prepareError;
+        }
 
         try {
           this.emitTask({ task: 'restore', phase: 'restoring', fileName, requestId });
@@ -305,6 +314,9 @@ export class BackupService {
         } catch (restoreError) {
           await this.replaceManagedData(currentEntries, rollbackDir);
           await this.replaceDefaultWorkspaceDirectories(manifest.defaultWorkspaceFiles.relativeRoots, rollbackDir);
+          if (pendingRecoveryPrepared) {
+            await confirmPendingRestoreRecovery().catch((): void => undefined);
+          }
           throw restoreError;
         }
 
@@ -313,6 +325,12 @@ export class BackupService {
         return { fileName, restartRequired: true, manifest };
       } catch (error) {
         const normalizedError = this.normalizeTaskError(error);
+        console.error('[BackupService] Restore failed:', {
+          fileName,
+          requestId,
+          error: normalizedError,
+          originalError: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+        });
         try {
           getDatabase();
         } catch {

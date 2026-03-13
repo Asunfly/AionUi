@@ -112,6 +112,9 @@
     "nutstorePasswordNotice": "請使用堅果雲應用密碼，不要填寫網頁登入密碼。",
     "nutstoreWebdavNotice": "堅果雲模式本質上仍然是標準 WebDAV 備份，WebDAV 位址固定為堅果雲官方位址。",
     "nutstoreHelpAction": "查看堅果雲 WebDAV 說明",
+    "nutstoreAppPassword": "應用密碼",
+    "nutstoreAppPasswordPlaceholder": "請輸入應用密碼，不是帳號密碼。",
+    "nutstoreAppPasswordGuideTooltip": "點擊查看應用密碼取得方式",
     "link": "連結",
     "account": "帳號",
     "expandConfig": "展開配置",
@@ -120,6 +123,7 @@
     "connectionIncompleteBadge": "待填寫",
     "connectionReadyHint": "{{provider}} 的連線資訊已大致就緒，建議先測試連通性再執行備份或還原。",
     "fillConnectionFieldsHint": "填寫連結、帳號與密碼後即可啟用連線測試。",
+    "passwordOnly": "密碼",
     "remotePathHint": "通常保留預設目錄即可，只有要區分環境或帳號時再修改。",
     "defaultWorkspaceNotice": "僅備份目前工作目錄下由應用程式自動建立的預設工作區。使用者手動指定或已遷移的外部工作區不包含在內。關閉時為精簡備份；開啟後可在換機還原時一併還原預設工作區檔案，但會增加備份時間與封包大小。",
     "scopeIncludedTitle": "目前會備份",
@@ -164,11 +168,11 @@
       "invalidEndpoint": "WebDAV 連結異常，請檢查 URL 是否指向有效的 WebDAV 服務。",
       "networkError": "無法連線至 WebDAV 服務，請檢查網路或伺服器狀態。",
       "remotePathError": "遠端目錄不可用，請檢查遠端目錄設定。",
-      "canceled": "備份工作已取消。",
+      "canceled": "工作已取消。",
       "taskConflict": "已有其他備份或還原工作正在執行。",
       "unsupportedFile": "所選備份檔案不受支援。",
       "packageInvalid": "備份套件無效，或與目前應用版本不相容。",
-      "unknown": "備份失敗，發生未知錯誤。"
+      "unknown": "操作失敗，發生未知錯誤。"
     }
   },
   "gemini": "Gemini",

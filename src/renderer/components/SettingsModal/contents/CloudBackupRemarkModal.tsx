@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IBackupTaskEvent, ICloudBackupSettings } from '@/common/types/backup';
+import type { IBackupTaskEvent, ICloudBackupSettings, TBackupTaskPhase } from '@/common/types/backup';
 import AionSteps from '@/renderer/components/base/AionSteps';
 import { formatCloudBackupErrorMessage, getSuggestedCloudBackupFileName } from '@/renderer/services/cloudBackup';
 import { Alert, Input, Modal, Progress } from '@arco-design/web-react';
-import { CheckOne, Loading } from '@icon-park/react';
+import { Attention, CheckOne, Loading } from '@icon-park/react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -49,6 +49,8 @@ function formatElapsedTime(seconds: number): string {
 
 const BACKUP_STEP_PHASES = ['connecting', 'snapshotting', 'collecting', 'packaging', 'uploading', 'success'] as const;
 const SUCCESS_AUTO_CLOSE_MS = 10000;
+const BACKUP_PHASE_MIN_DISPLAY_MS = 520;
+const BACKUP_EARLY_PHASES = new Set<TBackupTaskPhase>(['preparing', 'connecting', 'snapshotting']);
 
 const BACKUP_PHASE_PROGRESS: Record<string, number> = {
   idle: 0,
@@ -69,11 +71,14 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [loadingSuggestedName, setLoadingSuggestedName] = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
+  const [displayPhase, setDisplayPhase] = useState<TBackupTaskPhase>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [autoCloseCountdown, setAutoCloseCountdown] = useState<number | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const phaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phaseShownAtRef = useRef<number>(0);
 
   const formatter = useMemo(
     () =>
@@ -95,9 +100,10 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
   const isRunning = Boolean(activeRequestId) && (!activeEvent || (activeEvent.phase !== 'success' && activeEvent.phase !== 'error'));
   const isSuccess = activeEvent?.phase === 'success';
   const effectivePhase = activeEvent?.phase || (activeRequestId ? 'preparing' : 'idle');
-  const phaseIndex = BACKUP_STEP_PHASES.findIndex((phase) => phase === (activeEvent?.phase || 'connecting'));
-  const currentStep = phaseIndex < 0 ? 0 : phaseIndex;
-  const currentPhaseLabel = t(`settings.backup.phase.${effectivePhase}` as never, { defaultValue: effectivePhase });
+  const visibleStepPhase = displayPhase === 'preparing' ? 'connecting' : displayPhase;
+  const phaseIndex = BACKUP_STEP_PHASES.findIndex((phase) => phase === visibleStepPhase);
+  const currentStep = phaseIndex < 0 ? 1 : phaseIndex + 1;
+  const currentPhaseLabel = t(`settings.backup.phase.${displayPhase}` as never, { defaultValue: displayPhase });
 
   useEffect(() => {
     if (!visible) {
@@ -106,6 +112,7 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
       setInlineError(null);
       setLoadingSuggestedName(false);
       setDisplayProgress(0);
+      setDisplayPhase('idle');
       setElapsedSeconds(0);
       setAutoCloseCountdown(null);
       if (closeTimerRef.current) {
@@ -120,6 +127,11 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
         clearInterval(elapsedIntervalRef.current);
         elapsedIntervalRef.current = null;
       }
+      if (phaseTimerRef.current) {
+        clearTimeout(phaseTimerRef.current);
+        phaseTimerRef.current = null;
+      }
+      phaseShownAtRef.current = 0;
       return;
     }
 
@@ -154,8 +166,50 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
       return;
     }
 
-    setDisplayProgress(BACKUP_PHASE_PROGRESS[effectivePhase] ?? 0);
-  }, [effectivePhase, visible]);
+    if (phaseTimerRef.current) {
+      clearTimeout(phaseTimerRef.current);
+      phaseTimerRef.current = null;
+    }
+
+    if (displayPhase === effectivePhase) {
+      return;
+    }
+
+    const commitPhase = () => {
+      setDisplayPhase(effectivePhase);
+      phaseShownAtRef.current = Date.now();
+    };
+
+    if (displayPhase === 'idle' || effectivePhase === 'success' || effectivePhase === 'error') {
+      commitPhase();
+      return;
+    }
+
+    const elapsed = Date.now() - phaseShownAtRef.current;
+    const minDisplayMs = BACKUP_EARLY_PHASES.has(displayPhase) ? 760 : BACKUP_PHASE_MIN_DISPLAY_MS;
+
+    if (elapsed >= minDisplayMs) {
+      commitPhase();
+      return;
+    }
+
+    phaseTimerRef.current = setTimeout(commitPhase, minDisplayMs - elapsed);
+
+    return () => {
+      if (phaseTimerRef.current) {
+        clearTimeout(phaseTimerRef.current);
+        phaseTimerRef.current = null;
+      }
+    };
+  }, [displayPhase, effectivePhase, visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    setDisplayProgress(BACKUP_PHASE_PROGRESS[displayPhase] ?? 0);
+  }, [displayPhase, visible]);
 
   useEffect(() => {
     if (!visible || !isRunning) {
@@ -224,7 +278,9 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
     const requestId = `backup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setInlineError(null);
     setActiveRequestId(requestId);
+    setDisplayPhase('preparing');
     setDisplayProgress(BACKUP_PHASE_PROGRESS.preparing);
+    phaseShownAtRef.current = Date.now();
     setElapsedSeconds(0);
     void onStart(fileName, requestId).catch((error) => {
       setActiveRequestId(null);
@@ -239,8 +295,25 @@ const CloudBackupRemarkModal: React.FC<CloudBackupRemarkModalProps> = ({ visible
     }
 
     Modal.confirm({
-      title: t('settings.backup.cancelConfirmTitle'),
-      content: t('settings.backup.cancelConfirmContent'),
+      className: 'backup-cancel-confirm',
+      icon: null,
+      title: (
+        <div className='flex items-center gap-10px'>
+          <span className='inline-flex h-28px w-28px items-center justify-center rounded-full bg-[var(--color-warning-light-1)] text-[var(--color-warning-6)]'>
+            <Attention theme='filled' size='16' fill='currentColor' />
+          </span>
+          <span>{t('settings.backup.cancelConfirmTitle')}</span>
+        </div>
+      ),
+      content: (
+        <div className='space-y-8px'>
+          <div className='text-14px leading-6 text-[var(--color-text-1)]'>{t('settings.backup.cancelConfirmContent')}</div>
+          <div className='text-12px leading-5 text-[var(--color-text-3)]'>{t('settings.backup.runningNotice')}</div>
+        </div>
+      ),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      okButtonProps: { status: 'warning' },
       onOk: async () => {
         await onCancelTask(activeRequestId);
         onClose();

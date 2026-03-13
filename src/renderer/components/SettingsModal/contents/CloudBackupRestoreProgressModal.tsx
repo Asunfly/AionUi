@@ -39,6 +39,7 @@ const RESTORE_PHASE_PROGRESS: Record<string, number> = {
   error: 100,
 };
 
+// eslint-disable-next-line max-len
 const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalProps> = ({ visible, fileName, requestId, taskEvent, restartRequired = false, manifest, currentPlatform, errorMessage, restarting = false, onClose, onRestart }) => {
   const { t } = useTranslation();
   const [displayProgress, setDisplayProgress] = useState(0);
@@ -57,11 +58,13 @@ const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalP
   const effectivePhase = activeEvent?.phase || (requestId ? 'preparing' : 'idle');
   const currentPhaseLabel = t(`settings.backup.phase.${effectivePhase}` as never, { defaultValue: effectivePhase });
   const phaseIndex = RESTORE_STEP_PHASES.findIndex((phase) => phase === (activeEvent?.phase || 'downloading'));
-  const currentStep = phaseIndex < 0 ? 0 : phaseIndex;
+  const currentStep = phaseIndex < 0 ? 1 : phaseIndex + 1;
   const resolvedError = errorMessage || (activeEvent?.phase === 'error' ? formatCloudBackupErrorMessage(activeEvent.errorCode, activeEvent.message) : null);
   const isError = Boolean(resolvedError);
   const isSuccess = activeEvent?.phase === 'success';
+  const isDevManualRestartMode = window.location.protocol !== 'file:';
   const restartPending = (isSuccess || restartRequired) && !isError;
+  const shouldAutoRestart = restartPending && !isDevManualRestartMode;
   const shouldShowCrossPlatformWarning = Boolean(manifest?.sourcePlatform && currentPlatform && manifest.sourcePlatform !== currentPlatform);
 
   useEffect(() => {
@@ -83,7 +86,7 @@ const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalP
   }, [effectivePhase, visible]);
 
   useEffect(() => {
-    if (!visible || !restartPending) {
+    if (!visible || !shouldAutoRestart) {
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
@@ -125,7 +128,7 @@ const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalP
         countdownIntervalRef.current = null;
       }
     };
-  }, [onRestart, restartPending, visible]);
+  }, [onRestart, shouldAutoRestart, visible]);
 
   const handleRestartNow = () => {
     if (closeTimerRef.current) {
@@ -200,7 +203,7 @@ const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalP
                 <CheckOne theme='filled' size='20' fill='var(--color-success-6)' />
                 <div className='min-w-0 flex-1'>
                   <div className='text-16px font-600 text-[var(--color-text-1)]'>{t('settings.backup.restoreSuccessTitle')}</div>
-                  <div className='mt-6px text-13px leading-5 text-[var(--color-text-3)]'>{t('settings.backup.restoreRestartCountdown', { count: restartCountdown ?? 0 })}</div>
+                  <div className='mt-6px text-13px leading-5 text-[var(--color-text-3)]'>{isDevManualRestartMode ? t('settings.backup.restoreRestartManual') : t('settings.backup.restoreRestartCountdown', { count: restartCountdown ?? 0 })}</div>
                 </div>
               </div>
             </div>
