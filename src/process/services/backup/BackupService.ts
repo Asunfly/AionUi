@@ -67,7 +67,7 @@ async function exists(targetPath: string): Promise<boolean> {
 
 async function removeIfExists(targetPath: string): Promise<void> {
   if (await exists(targetPath)) {
-    await fs.rm(targetPath, { recursive: true, force: true });
+    await fs.rm(targetPath, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
   }
 }
 
@@ -130,6 +130,51 @@ function buildWorkspaceZipPath(relativePath: string): string {
 
 function buildWorkspacePayloadPath(payloadRoot: string, relativePath: string): string {
   return path.join(payloadRoot, 'payload', 'workspaces', ...relativePath.split('/').filter(Boolean));
+}
+
+function normalizeZipEntryPath(value: string): string {
+  return value
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/{2,}/g, '/');
+}
+
+function hasZipPayload(zip: JSZip, zipPath: string, type: 'file' | 'directory'): boolean {
+  const normalizedPath = normalizeZipEntryPath(zipPath).replace(/\/+$/g, '');
+  if (!normalizedPath) {
+    return false;
+  }
+
+  if (type === 'file') {
+    return Boolean(zip.file(normalizedPath));
+  }
+
+  const directoryPrefix = `${normalizedPath}/`;
+  return Object.values(zip.files).some((entry) => {
+    const entryName = normalizeZipEntryPath(entry.name);
+    return entryName === normalizedPath || entryName === directoryPrefix || entryName.startsWith(directoryPrefix);
+  });
+}
+
+function resolveSafeZipEntryOutputPath(targetDir: string, entryName: string): string {
+  const portableEntryName = normalizeZipEntryPath(entryName);
+  const portableSegments = portableEntryName.split('/');
+  if (!portableEntryName || portableSegments.some((segment) => !segment || segment === '.' || segment === '..')) {
+    throw new Error('Backup package contains unsafe file paths.');
+  }
+
+  const normalizedEntryName = path.posix.normalize(portableEntryName);
+  if (!normalizedEntryName || normalizedEntryName === '.' || normalizedEntryName === '..' || normalizedEntryName.startsWith('../') || /^[a-zA-Z]:/.test(normalizedEntryName) || normalizedEntryName.includes('\0')) {
+    throw new Error('Backup package contains unsafe file paths.');
+  }
+
+  const resolvedTargetDir = path.resolve(targetDir);
+  const outputPath = path.resolve(resolvedTargetDir, ...normalizedEntryName.split('/').filter(Boolean));
+  if (outputPath !== resolvedTargetDir && !outputPath.startsWith(`${resolvedTargetDir}${path.sep}`)) {
+    throw new Error('Backup package contains unsafe file paths.');
+  }
+
+  return outputPath;
 }
 
 function decodeLegacyStorageJson<T>(rawContent: string): T {
@@ -283,15 +328,26 @@ export class BackupService {
       const tempDir = await this.createTempDir('restore');
       const stagingDir = path.join(tempDir, 'staging');
       const rollbackDir = path.join(tempDir, 'rollback');
+      const finalRequestId = requestId || `restore-${Date.now()}-${randomToken(4)}`;
+      const abortController = new AbortController();
+      const { signal } = abortController;
       let pendingRecoveryPrepared = false;
 
-      try {
-        this.emitTask({ task: 'restore', phase: 'downloading', fileName, requestId });
-        const archiveBuffer = await client.downloadFile(fileName);
+      this.currentAbortController = abortController;
+      this.currentRequestId = finalRequestId;
 
-        this.emitTask({ task: 'restore', phase: 'validating', fileName, requestId });
+      try {
+        this.emitTask({ task: 'restore', phase: 'downloading', fileName, requestId: finalRequestId, cancellable: true });
+        const archiveBuffer = await client.downloadFile(fileName, signal);
+        this.assertNotCanceled(signal);
+
+        this.emitTask({ task: 'restore', phase: 'validating', fileName, requestId: finalRequestId, cancellable: true });
         const manifest = await this.extractAndValidateArchive(archiveBuffer, stagingDir);
+        this.assertNotCanceled(signal);
         const restoreEntries = this.resolveManifestManagedEntries(manifest);
+
+        this.emitTask({ task: 'restore', phase: 'restoring', fileName, requestId: finalRequestId, cancellable: false });
+        this.currentAbortController = null;
 
         WorkerManage.clear();
         closeDatabase();
@@ -307,7 +363,6 @@ export class BackupService {
         }
 
         try {
-          this.emitTask({ task: 'restore', phase: 'restoring', fileName, requestId });
           await this.replaceManagedData(restoreEntries, stagingDir);
           await this.replaceDefaultWorkspaceDirectories(manifest.defaultWorkspaceFiles.relativeRoots, stagingDir);
           await this.rewriteManagedWorkspacePaths(manifest);
@@ -321,13 +376,13 @@ export class BackupService {
         }
 
         getDatabase();
-        this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName, requestId });
+        this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName, requestId: finalRequestId, cancellable: false });
         return { fileName, restartRequired: true, manifest };
       } catch (error) {
         const normalizedError = this.normalizeTaskError(error);
         console.error('[BackupService] Restore failed:', {
           fileName,
-          requestId,
+          requestId: finalRequestId,
           error: normalizedError,
           originalError: error instanceof Error ? { message: error.message, stack: error.stack } : error,
         });
@@ -342,10 +397,12 @@ export class BackupService {
           fileName,
           message: normalizedError.message,
           errorCode: normalizedError.code,
-          requestId,
+          requestId: finalRequestId,
+          cancellable: false,
         });
         throw normalizedError;
       } finally {
+        this.clearActiveTask(finalRequestId);
         await removeIfExists(tempDir);
       }
     });
@@ -530,6 +587,17 @@ export class BackupService {
     };
     manifest.managedEntryKeys = managedEntryKeys;
 
+    const declaredManagedEntries = filterManagedBackupEntriesByKeys(getCurrentManagedBackupEntries(), managedEntryKeys);
+    const missingManagedPayloads = declaredManagedEntries.filter((entry) => !hasZipPayload(zip, entry.zipPath, entry.type)).map((entry) => entry.key);
+    if (missingManagedPayloads.length > 0) {
+      throw new Error(`Backup payload is missing for managed entries: ${missingManagedPayloads.join(', ')}`);
+    }
+
+    const missingWorkspacePayloads = manifest.defaultWorkspaceFiles.relativeRoots.filter((relativeRoot) => !hasZipPayload(zip, buildWorkspaceZipPath(relativeRoot), 'directory'));
+    if (missingWorkspacePayloads.length > 0) {
+      throw new Error(`Backup workspace payload is missing for: ${missingWorkspacePayloads.join(', ')}`);
+    }
+
     ensureDirectory(targetDir);
 
     await Promise.all(
@@ -538,7 +606,7 @@ export class BackupService {
           return;
         }
 
-        const outputPath = path.join(targetDir, entry.name);
+        const outputPath = resolveSafeZipEntryOutputPath(targetDir, entry.name);
         await ensureParentDir(outputPath);
         await fs.writeFile(outputPath, await entry.async('nodebuffer'));
       })
@@ -849,7 +917,7 @@ export class BackupService {
     if (/Unsupported backup file/i.test(message)) {
       return new BackupTaskError('unsupported_file', message);
     }
-    if (/manifest|schema version|payload is missing|database version|default workspace metadata is invalid/i.test(message)) {
+    if (/manifest|schema version|payload is missing|database version|default workspace metadata is invalid|unsafe file paths/i.test(message)) {
       return new BackupTaskError('package_invalid', message);
     }
 

@@ -49,7 +49,7 @@ async function exists(targetPath: string): Promise<boolean> {
 
 async function removeIfExists(targetPath: string): Promise<void> {
   if (await exists(targetPath)) {
-    await fs.rm(targetPath, { recursive: true, force: true });
+    await fs.rm(targetPath, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
   }
 }
 

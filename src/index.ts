@@ -29,6 +29,12 @@ import i18n from '@process/i18n';
 // @ts-expect-error - electron-squirrel-startup doesn't have types
 import electronSquirrelStartup from 'electron-squirrel-startup';
 
+const e2eUserDataDir = process.env.AIONUI_E2E_USER_DATA_DIR?.trim();
+if (e2eUserDataDir) {
+  fs.mkdirSync(e2eUserDataDir, { recursive: true });
+  app.setPath('userData', e2eUserDataDir);
+}
+
 // ============ Deep Link Protocol ============
 // Register aionui:// protocol scheme for external app integration (e.g., New API token quick-add)
 const PROTOCOL_SCHEME = 'aionui';
@@ -652,17 +658,17 @@ const handleAppReady = async (): Promise<void> => {
   }
 
   try {
+    restoreRecoveryStatus = await beginPendingRestoreRecoveryVerification();
+  } catch (error) {
+    console.error('[RestoreRecovery] Failed to verify pending restore recovery:', error);
+  }
+
+  try {
     await initializeProcess();
   } catch (error) {
     console.error('Failed to initialize process:', error);
     app.exit(1);
     return;
-  }
-
-  try {
-    restoreRecoveryStatus = await beginPendingRestoreRecoveryVerification();
-  } catch (error) {
-    console.error('[RestoreRecovery] Failed to verify pending restore recovery:', error);
   }
 
   if (isResetPasswordMode) {

@@ -252,6 +252,48 @@ describe('BackupService', () => {
     expect(restoreRecoveryMocks.preparePendingRestoreRecovery).not.toHaveBeenCalled();
   });
 
+  it('rejects restore packages that contain unsafe zip entry paths', async () => {
+    const service = new BackupService();
+    const zip = new JSZip();
+    zip.file(
+      'manifest.json',
+      JSON.stringify({
+        backupSchemaVersion: 1,
+        appVersion: '1.8.23',
+        dbVersion: CURRENT_DB_VERSION,
+        createdAt: '2026-03-07T15:45:30.000Z',
+        providerType: 'webdav',
+        sourcePlatform: 'win32',
+        sourceArch: 'x64',
+        sourceHostname: 'OFFICE-PC',
+        includedSections: ['database'],
+        defaultWorkspaceFiles: {
+          included: false,
+          relativeRoots: [],
+        },
+        sourceSystemDirs: {
+          cacheDir: 'cache',
+          workDir: 'work',
+          dataDir: 'data',
+          configDir: 'config',
+        },
+        fileName: 'AionUi_v1_test.zip',
+      })
+    );
+    zip.file('payload/db/aionui.db', 'sqlite');
+    zip.file('payload\\db\\..\\..\\escape.txt', 'boom');
+    backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
+
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow('Backup package contains unsafe file paths.');
+    expect(backupServiceMocks.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'restore',
+        phase: 'error',
+        errorCode: 'package_invalid',
+      })
+    );
+  });
+
   it('restores a valid backup package, returns its manifest, and emits request-scoped restore events', async () => {
     const service = new BackupService();
     const zip = new JSZip();
@@ -402,6 +444,80 @@ describe('BackupService', () => {
     await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req')).rejects.toThrow('restore failed');
     expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
     expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).toHaveBeenCalled();
+  });
+
+  it('rejects restore packages that declare a managed entry without its payload', async () => {
+    const service = new BackupService();
+    backupPathMocks.getCurrentManagedBackupEntries.mockReturnValue([
+      {
+        key: 'configFile',
+        type: 'file',
+        sourcePath: '/source/config',
+        restorePath: '/restore/config',
+        zipPath: 'payload/cache/aionui-config.txt',
+      },
+    ]);
+
+    const zip = new JSZip();
+    zip.file(
+      'manifest.json',
+      JSON.stringify({
+        backupSchemaVersion: 1,
+        appVersion: '1.8.23',
+        dbVersion: CURRENT_DB_VERSION,
+        createdAt: '2026-03-07T15:45:30.000Z',
+        providerType: 'webdav',
+        sourcePlatform: 'win32',
+        sourceArch: 'x64',
+        sourceHostname: 'OFFICE-PC',
+        includedSections: ['database', 'configFile'],
+        managedEntryKeys: ['database', 'configFile'],
+        defaultWorkspaceFiles: {
+          included: false,
+          relativeRoots: [],
+        },
+        sourceSystemDirs: {
+          cacheDir: 'cache',
+          workDir: 'work',
+          dataDir: 'data',
+          configDir: 'config',
+        },
+        fileName: 'AionUi_v1_test.zip',
+      })
+    );
+    zip.file('payload/db/aionui.db', 'sqlite');
+    backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
+
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow('Backup payload is missing for managed entries: configFile');
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).not.toHaveBeenCalled();
+  });
+
+  it('cancels an in-flight restore task while still downloading', async () => {
+    const service = new BackupService();
+
+    backupServiceMocks.downloadFile.mockImplementation(
+      (_fileName: string, signal?: AbortSignal) =>
+        new Promise<Buffer>((_, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+          });
+        })
+    );
+
+    const taskPromise = service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req');
+    await Promise.resolve();
+
+    expect(service.cancelTask('restore-req')).toBe(true);
+
+    await expect(taskPromise).rejects.toMatchObject({ code: 'backup_canceled' });
+    expect(backupServiceMocks.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'restore',
+        phase: 'error',
+        errorCode: 'backup_canceled',
+        requestId: 'restore-req',
+      })
+    );
   });
 
   it('cancels an in-flight backup task and emits the canceled error code', async () => {

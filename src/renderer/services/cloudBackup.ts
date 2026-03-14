@@ -66,6 +66,10 @@ export function formatCloudBackupErrorMessage(code?: TBackupErrorCode, fallback?
     unknown: 'settings.backup.error.unknown',
   };
 
+  if (code === 'unknown' && fallback) {
+    return fallback;
+  }
+
   if (code && keyMap[code]) {
     return i18n.t(keyMap[code], { defaultValue: fallback || code });
   }

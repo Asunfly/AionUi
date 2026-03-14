@@ -22,8 +22,10 @@ interface CloudBackupRestoreProgressModalProps {
   currentPlatform?: string;
   errorMessage?: string | null;
   restarting?: boolean;
+  canceling?: boolean;
   onClose: () => void;
   onRestart: () => Promise<void>;
+  onCancelTask: (requestId: string) => Promise<void>;
 }
 
 const RESTORE_STEP_PHASES = ['downloading', 'validating', 'restoring', 'success'] as const;
@@ -40,7 +42,7 @@ const RESTORE_PHASE_PROGRESS: Record<string, number> = {
 };
 
 // eslint-disable-next-line max-len
-const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalProps> = ({ visible, fileName, requestId, taskEvent, restartRequired = false, manifest, currentPlatform, errorMessage, restarting = false, onClose, onRestart }) => {
+const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalProps> = ({ visible, fileName, requestId, taskEvent, restartRequired = false, manifest, currentPlatform, errorMessage, restarting = false, canceling = false, onClose, onRestart, onCancelTask }) => {
   const { t } = useTranslation();
   const [displayProgress, setDisplayProgress] = useState(0);
   const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
@@ -66,6 +68,7 @@ const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalP
   const restartPending = (isSuccess || restartRequired) && !isError;
   const shouldAutoRestart = restartPending && !isDevManualRestartMode;
   const shouldShowCrossPlatformWarning = Boolean(manifest?.sourcePlatform && currentPlatform && manifest.sourcePlatform !== currentPlatform);
+  const canCancel = Boolean(requestId) && !isError && !restartPending && (!activeEvent || activeEvent.cancellable === true);
 
   useEffect(() => {
     if (!visible) {
@@ -176,6 +179,14 @@ const CloudBackupRestoreProgressModal: React.FC<CloudBackupRestoreProgressModalP
               <AionSteps.Step title={t('settings.backup.restoreStep.restoring')} />
               <AionSteps.Step title={t('settings.backup.restoreStep.completed')} />
             </AionSteps>
+
+            {canCancel && requestId && (
+              <div className='flex justify-end'>
+                <Button status='warning' loading={canceling} onClick={() => void onCancelTask(requestId)}>
+                  {t('common.cancel')}
+                </Button>
+              </div>
+            )}
           </>
         )}
 

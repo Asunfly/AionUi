@@ -67,6 +67,8 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
     <Tooltip key={conversation.id} {...siderTooltipProps} content={conversation.name || t('conversation.welcome.newConversation')} position='right'>
       <div
         id={'c-' + conversation.id}
+        data-conversation-id={conversation.id}
+        data-testid={`conversation-row-${conversation.id}`}
         className={classNames('chat-history__item px-12px py-8px rd-8px flex justify-start items-center group cursor-pointer relative overflow-hidden shrink-0 conversation-item [&.conversation-item+&.conversation-item]:mt-2px min-w-0 transition-colors', {
           'hover:bg-[rgba(var(--primary-6),0.14)]': !batchMode,
           '!bg-active': selected,
@@ -131,25 +133,25 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
                     }
                   }}
                 >
-                  <Menu.Item key='pin'>
+                  <Menu.Item key='pin' data-menu-action='pin'>
                     <div className='flex items-center gap-8px'>
                       <Pushpin theme='outline' size='14' />
                       <span>{isPinned ? t('conversation.history.unpin') : t('conversation.history.pin')}</span>
                     </div>
                   </Menu.Item>
-                  <Menu.Item key='rename'>
+                  <Menu.Item key='rename' data-menu-action='rename'>
                     <div className='flex items-center gap-8px'>
                       <EditOne theme='outline' size='14' />
                       <span>{t('conversation.history.rename')}</span>
                     </div>
                   </Menu.Item>
-                  <Menu.Item key='export'>
+                  <Menu.Item key='export' data-menu-action='export'>
                     <div className='flex items-center gap-8px'>
                       <Export theme='outline' size='14' />
                       <span>{t('conversation.history.export')}</span>
                     </div>
                   </Menu.Item>
-                  <Menu.Item key='delete'>
+                  <Menu.Item key='delete' data-menu-action='delete'>
                     <div className='flex items-center gap-8px text-[rgb(var(--warning-6))]'>
                       <DeleteOne theme='outline' size='14' />
                       <span>{t('conversation.history.deleteTitle')}</span>
@@ -165,6 +167,8 @@ const ConversationRow: React.FC<ConversationRowProps> = (props) => {
               unmountOnExit={false}
             >
               <span
+                data-conversation-menu-trigger='true'
+                data-testid={`conversation-menu-trigger-${conversation.id}`}
                 className={classNames('flex-center cursor-pointer hover:bg-fill-2 rd-4px p-4px transition-colors relative text-t-primary', {
                   flex: isMobile || menuVisible,
                   'hidden group-hover:flex': !isMobile && !menuVisible,

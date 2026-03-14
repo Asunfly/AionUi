@@ -121,7 +121,11 @@ export const useConversationActions = ({ batchMode, conversations, onSessionClic
   const buildDeleteReminderContent = useCallback(
     (workspaceMode: TWorkspaceSource | null) => {
       if (!workspaceMode) {
-        return <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.deleteConfirm')}</div>;
+        return (
+          <div data-testid='conversation-delete-dialog-content' className='text-14px leading-6 text-[var(--color-text-2)]'>
+            {t('conversation.history.deleteConfirm')}
+          </div>
+        );
       }
 
       const reminderMeta = {
@@ -143,11 +147,13 @@ export const useConversationActions = ({ batchMode, conversations, onSessionClic
       }[workspaceMode];
 
       return (
-        <div className='space-y-12px'>
+        <div data-testid='conversation-delete-dialog-content' className='space-y-12px'>
           <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.deleteConfirm')}</div>
           <div className='rounded-12px bg-[var(--color-fill-1)] p-12px'>
             <div className='text-12px font-500 leading-5 text-[var(--color-text-3)]'>{t('conversation.history.deleteImpactTitle')}</div>
-            <div className={`mt-8px inline-flex items-center rounded-full border px-8px py-4px text-12px font-600 leading-none ${reminderMeta.accentClass}`}>{reminderMeta.label}</div>
+            <div data-testid={`conversation-delete-impact-${workspaceMode}`} className={`mt-8px inline-flex items-center rounded-full border px-8px py-4px text-12px font-600 leading-none ${reminderMeta.accentClass}`}>
+              {reminderMeta.label}
+            </div>
             <div className='mt-10px text-13px leading-5 text-[var(--color-text-1)]'>{reminderMeta.detail}</div>
           </div>
         </div>
@@ -197,17 +203,21 @@ export const useConversationActions = ({ batchMode, conversations, onSessionClic
       ).filter((item) => reminderCounts[item.key] > 0);
 
       if (reminderItems.length === 0) {
-        return <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size })}</div>;
+        return (
+          <div data-testid='conversation-batch-delete-dialog-content' className='text-14px leading-6 text-[var(--color-text-2)]'>
+            {t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size })}
+          </div>
+        );
       }
 
       return (
-        <div className='space-y-12px'>
+        <div data-testid='conversation-batch-delete-dialog-content' className='space-y-12px'>
           <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size })}</div>
           <div className='rounded-12px bg-[var(--color-fill-1)] p-12px'>
             <div className='text-12px font-500 leading-5 text-[var(--color-text-3)]'>{t('conversation.history.deleteImpactTitle')}</div>
             <div className='mt-8px space-y-8px'>
               {reminderItems.map((item) => (
-                <div key={item.key} className='rounded-10px bg-[var(--color-bg-1)] p-10px'>
+                <div key={item.key} data-testid={`conversation-batch-delete-impact-${item.key}`} className='rounded-10px bg-[var(--color-bg-1)] p-10px'>
                   <div className={`inline-flex items-center rounded-full border px-8px py-4px text-12px font-600 leading-none ${item.accentClass}`}>
                     {item.label} · {reminderCounts[item.key]}
                   </div>

@@ -109,9 +109,10 @@ const BackupField: React.FC<{
   hint?: React.ReactNode;
   hintAction?: () => void;
   alignStart?: boolean;
+  testId?: string;
   children: React.ReactNode;
-}> = ({ label, hintAriaLabel, hint, hintAction, alignStart = false, children }) => (
-  <div className={`grid gap-10px md:grid-cols-[156px_1fr] ${alignStart ? 'items-start' : 'items-center'}`}>
+}> = ({ label, hintAriaLabel, hint, hintAction, alignStart = false, testId, children }) => (
+  <div data-testid={testId} className={`grid gap-10px md:grid-cols-[156px_1fr] ${alignStart ? 'items-start' : 'items-center'}`}>
     <div className={alignStart ? 'flex items-start pt-6px' : 'flex min-h-32px items-center'}>
       <div className='flex min-w-0 items-center gap-4px'>
         <div className='flex min-h-20px min-w-0 items-center text-13px leading-[20px] text-[var(--color-text-2)]'>{label}</div>
@@ -231,6 +232,7 @@ const SystemModalContent: React.FC = () => {
   const [restoreResult, setRestoreResult] = useState<{ restartRequired: boolean; manifest?: IBackupManifest } | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreRestarting, setRestoreRestarting] = useState(false);
+  const [restoreCanceling, setRestoreCanceling] = useState(false);
   const [backupPanelExpanded, setBackupPanelExpanded] = useState(false);
   const viewMode = useSettingsViewMode();
   const isPageMode = viewMode === 'page';
@@ -426,6 +428,7 @@ const SystemModalContent: React.FC = () => {
     setRestoreResult(null);
     setRestoreError(null);
     setRestoreRestarting(false);
+    setRestoreCanceling(false);
   }, []);
 
   const handleRestartAfterRestore = useCallback(async () => {
@@ -438,6 +441,22 @@ const SystemModalContent: React.FC = () => {
     }
   }, [t]);
 
+  const handleRestoreCancel = useCallback(
+    async (requestId: string) => {
+      setRestoreCanceling(true);
+      try {
+        const canceled = await cancelCloudBackupTask(requestId);
+        if (!canceled) {
+          setRestoreCanceling(false);
+        }
+      } catch (cancelError) {
+        setRestoreCanceling(false);
+        Message.error(cancelError instanceof Error ? cancelError.message : t('common.unknownError'));
+      }
+    },
+    [t]
+  );
+
   const handleRestoreConfirm = useCallback(
     (fileName: string) => {
       if (!backupSettings) {
@@ -449,15 +468,18 @@ const SystemModalContent: React.FC = () => {
       setRestoreResult(null);
       setRestoreError(null);
       setRestoreRestarting(false);
+      setRestoreCanceling(false);
       setRestoreRequest({ fileName, requestId });
       setRestoreProgressVisible(true);
 
       void restoreCloudRemotePackage(backupSettings, fileName, { requestId })
         .then((result) => {
+          setRestoreCanceling(false);
           setRestoreResult(result);
         })
         .catch((restoreProcessError) => {
           console.error('[CloudBackup] Restore failed:', restoreProcessError);
+          setRestoreCanceling(false);
           setRestoreError(restoreProcessError instanceof Error ? restoreProcessError.message : t('settings.backup.error.unknown'));
         });
     },
@@ -479,6 +501,7 @@ const SystemModalContent: React.FC = () => {
         role='button'
         tabIndex={0}
         aria-label={t('settings.backup.testConnection')}
+        data-testid='backup-test-connection-action'
         className='icon-hover inline-flex items-center justify-center text-[var(--color-text-3)] transition-colors hover:text-[var(--color-primary-6)]'
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => void handleTestConnection()}
@@ -501,7 +524,7 @@ const SystemModalContent: React.FC = () => {
         <>
           <CloudBackupRemarkModal visible={remarkModalVisible} settings={backupSettings} taskEvent={backupTaskEvent} onClose={() => setRemarkModalVisible(false)} onStart={handleManualBackupConfirm} onCancelTask={handleManualBackupCancel} />
           <CloudBackupRestoreModal visible={restoreModalVisible} settings={backupSettings} onCancel={() => setRestoreModalVisible(false)} onConfirm={handleRestoreConfirm} />
-          <CloudBackupRestoreProgressModal visible={restoreProgressVisible} fileName={restoreRequest?.fileName || ''} requestId={restoreRequest?.requestId || null} taskEvent={backupTaskEvent} restartRequired={restoreResult?.restartRequired} manifest={restoreResult?.manifest} currentPlatform={systemInfo?.platform} errorMessage={restoreError} restarting={restoreRestarting} onClose={closeRestoreProgressModal} onRestart={handleRestartAfterRestore} />
+          <CloudBackupRestoreProgressModal visible={restoreProgressVisible} fileName={restoreRequest?.fileName || ''} requestId={restoreRequest?.requestId || null} taskEvent={backupTaskEvent} restartRequired={restoreResult?.restartRequired} manifest={restoreResult?.manifest} currentPlatform={systemInfo?.platform} errorMessage={restoreError} restarting={restoreRestarting} canceling={restoreCanceling} onClose={closeRestoreProgressModal} onRestart={handleRestartAfterRestore} onCancelTask={handleRestoreCancel} />
         </>
       )}
 
@@ -528,7 +551,7 @@ const SystemModalContent: React.FC = () => {
                 <div className='text-15px font-500 text-[var(--color-text-1)]'>{t('settings.backup.title')}</div>
                 <div className='mt-4px text-13px text-[var(--color-text-3)]'>{t('settings.backup.description')}</div>
               </div>
-              <Button type='text' className='!rounded-10px !px-10px !text-[var(--color-text-2)] hover:!bg-[var(--fill-0)]' icon={backupPanelExpanded ? <Up theme='outline' size='14' fill='currentColor' /> : <Down theme='outline' size='14' fill='currentColor' />} onClick={() => setBackupPanelExpanded((previous) => !previous)}>
+              <Button data-testid='backup-panel-toggle' type='text' className='!rounded-10px !px-10px !text-[var(--color-text-2)] hover:!bg-[var(--fill-0)]' icon={backupPanelExpanded ? <Up theme='outline' size='14' fill='currentColor' /> : <Down theme='outline' size='14' fill='currentColor' />} onClick={() => setBackupPanelExpanded((previous) => !previous)}>
                 {backupPanelExpanded ? t('settings.backup.collapseConfig') : t('settings.backup.expandConfig')}
               </Button>
             </div>
@@ -540,8 +563,8 @@ const SystemModalContent: React.FC = () => {
                 <div className='grid items-stretch gap-14px xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]'>
                   <div className='flex h-full min-h-0 flex-col'>
                     <BackupSectionCard title={t('settings.backup.connectionSection')} className='h-full'>
-                      <BackupField label={t('settings.backup.provider')}>
-                        <Select className='backup-select-control' value={activeProvider} onChange={(value) => updateBackupSettings((current) => ({ ...current, activeProvider: value as TBackupProvider }))}>
+                      <BackupField label={t('settings.backup.provider')} testId='backup-provider-field'>
+                        <Select data-testid='backup-provider-select' className='backup-select-control' value={activeProvider} onChange={(value) => updateBackupSettings((current) => ({ ...current, activeProvider: value as TBackupProvider }))}>
                           <Select.Option value='webdav'>{t('settings.backup.webdav')}</Select.Option>
                           <Select.Option value='nutstore'>{t('settings.backup.nutstore')}</Select.Option>
                         </Select>
@@ -549,22 +572,22 @@ const SystemModalContent: React.FC = () => {
 
                       {activeProvider === 'webdav' ? (
                         <>
-                          <BackupField label={t('settings.backup.link')}>
+                          <BackupField label={t('settings.backup.link')} testId='backup-link-field'>
                             <Input className='backup-action-input' value={backupSettings.webdav.host} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, host: value } }))} placeholder='https://example.com/dav' suffix={connectionTestAction} spellCheck={false} />
                           </BackupField>
-                          <BackupField label={t('settings.backup.account')}>
+                          <BackupField label={t('settings.backup.account')} testId='backup-account-field'>
                             <Input value={backupSettings.webdav.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, username: value } }))} spellCheck={false} />
                           </BackupField>
-                          <BackupField label={t('settings.backup.passwordOnly')}>
+                          <BackupField label={t('settings.backup.passwordOnly')} testId='backup-password-field'>
                             <Input.Password className='backup-action-input' value={backupSettings.webdav.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, password: value } }))} />
                           </BackupField>
-                          <BackupField label={t('settings.backup.remotePath')} hint={t('settings.backup.remotePathHint')}>
+                          <BackupField label={t('settings.backup.remotePath')} hint={t('settings.backup.remotePathHint')} testId='backup-remote-path-field'>
                             <Input value={backupSettings.webdav.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, webdav: { ...current.webdav, remotePath: value } }))} placeholder='/AionUibackup' spellCheck={false} />
                           </BackupField>
                         </>
                       ) : (
                         <>
-                          <BackupField label={t('settings.backup.link')}>
+                          <BackupField label={t('settings.backup.link')} testId='backup-link-field'>
                             <Input
                               value={NUTSTORE_WEBDAV_HOST}
                               readOnly
@@ -580,13 +603,13 @@ const SystemModalContent: React.FC = () => {
                               }}
                             />
                           </BackupField>
-                          <BackupField label={t('settings.backup.account')}>
+                          <BackupField label={t('settings.backup.account')} testId='backup-account-field'>
                             <Input value={backupSettings.nutstore.username} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, username: value } }))} spellCheck={false} />
                           </BackupField>
-                          <BackupField label={<span className='font-500 text-[var(--color-primary-6)]'>{t('settings.backup.nutstoreAppPassword')}</span>} hint={t('settings.backup.nutstoreAppPasswordGuideTooltip')} hintAction={() => void ipcBridge.shell.openExternal.invoke(NUTSTORE_HELP_URL)}>
+                          <BackupField testId='backup-password-field' label={<span className='font-500 text-[var(--color-primary-6)]'>{t('settings.backup.nutstoreAppPassword')}</span>} hint={t('settings.backup.nutstoreAppPasswordGuideTooltip')} hintAction={() => void ipcBridge.shell.openExternal.invoke(NUTSTORE_HELP_URL)}>
                             <Input.Password className='backup-action-input nutstore-app-password-input' value={backupSettings.nutstore.password} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, password: value } }))} placeholder={t('settings.backup.nutstoreAppPasswordPlaceholder')} />
                           </BackupField>
-                          <BackupField label={t('settings.backup.remotePath')} hint={t('settings.backup.remotePathHint')}>
+                          <BackupField label={t('settings.backup.remotePath')} hint={t('settings.backup.remotePathHint')} testId='backup-remote-path-field'>
                             <Input value={backupSettings.nutstore.remotePath} onChange={(value) => updateBackupSettings((current) => ({ ...current, nutstore: { ...current.nutstore, remotePath: value } }))} placeholder='/AionUibackup' spellCheck={false} />
                           </BackupField>
                         </>
@@ -597,10 +620,10 @@ const SystemModalContent: React.FC = () => {
                         <div className='mt-6px text-12px leading-5 text-[var(--color-text-3)]'>{connectionCoreReady ? t('settings.backup.actionSectionDescription') : t('settings.backup.configureActionHint')}</div>
 
                         <div className='mt-12px grid gap-10px sm:grid-cols-2'>
-                          <Button type='primary' disabled={!backupConfigured} onClick={() => setRemarkModalVisible(true)}>
+                          <Button data-testid='backup-manual-action' type='primary' disabled={!backupConfigured} onClick={() => setRemarkModalVisible(true)}>
                             {t('settings.backup.manualBackup')}
                           </Button>
-                          <Button status='warning' disabled={!backupConfigured} onClick={() => setRestoreModalVisible(true)}>
+                          <Button data-testid='backup-restore-action' status='warning' disabled={!backupConfigured} onClick={() => setRestoreModalVisible(true)}>
                             {t('settings.backup.restore')}
                           </Button>
                         </div>

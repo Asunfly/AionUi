@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playwright + Electron test fixtures.
  *
  * Launches the Electron app once and shares the window across tests.
@@ -23,11 +23,12 @@ type Fixtures = {
   page: Page;
 };
 
-// Singleton – one app per test worker
+// Singleton 鈥?one app per test worker
 let app: ElectronApplication | null = null;
 let mainPage: Page | null = null;
 const e2eStateSandboxDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aionui-e2e-state-'));
 const e2eStateFile = path.join(e2eStateSandboxDir, 'extension-states.json');
+const e2eUserDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aionui-e2e-userdata-'));
 
 function isDevToolsWindow(page: Page): boolean {
   return page.url().startsWith('devtools://');
@@ -111,11 +112,13 @@ async function launchApp(): Promise<ElectronApplication> {
     ...process.env,
     AIONUI_EXTENSIONS_PATH: process.env.AIONUI_EXTENSIONS_PATH || path.join(projectRoot, 'examples'),
     AIONUI_EXTENSION_STATES_FILE: process.env.AIONUI_EXTENSION_STATES_FILE || e2eStateFile,
+    AIONUI_E2E_USER_DATA_DIR: process.env.AIONUI_E2E_USER_DATA_DIR || e2eUserDataDir,
     AIONUI_DISABLE_AUTO_UPDATE: '1',
     AIONUI_DISABLE_DEVTOOLS: '1',
     AIONUI_E2E_TEST: '1',
     AIONUI_CDP_PORT: '0',
   };
+  delete commonEnv.ELECTRON_RUN_AS_NODE;
 
   if (usePackaged) {
     const packaged = resolvePackagedApp();
@@ -176,7 +179,7 @@ export const test = base.extend<Fixtures>({
     try {
       await app.evaluate(() => true);
     } catch {
-      console.log('[E2E] App process lost – relaunching...');
+      console.log('[E2E] App process lost 鈥?relaunching...');
       app = await launchApp();
       mainPage = null; // force window re-resolution
     }
@@ -197,7 +200,7 @@ export const test = base.extend<Fixtures>({
         await mainPage.waitForLoadState('domcontentloaded', { timeout: 15_000 });
       }
     } catch {
-      // Page may have been replaced – resolve again
+      // Page may have been replaced 鈥?resolve again
       mainPage = await resolveMainWindow(electronApp);
     }
 
@@ -208,7 +211,7 @@ export const test = base.extend<Fixtures>({
 
     // Attach screenshot on failure so it appears in the HTML report.
     // Playwright's built-in `screenshot: 'only-on-failure'` relies on its
-    // own `page` fixture, which we override for Electron — so we do it manually.
+    // own `page` fixture, which we override for Electron 鈥?so we do it manually.
     if (testInfo.status !== testInfo.expectedStatus && mainPage && !mainPage.isClosed()) {
       try {
         const screenshot = await mainPage.screenshot();
@@ -223,10 +226,10 @@ export const test = base.extend<Fixtures>({
   },
 });
 
-// ── Cleanup ──────────────────────────────────────────────────────────────────
+// 鈹€鈹€ Cleanup 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 // IMPORTANT: Do NOT use `test.afterAll` here. Playwright runs afterAll at the
 // end of **every** test.describe block, which would close and relaunch the
-// Electron app between describe blocks — each relaunch costs ~25-30 seconds.
+// Electron app between describe blocks 鈥?each relaunch costs ~25-30 seconds.
 //
 // Instead, register a one-time process exit handler so the singleton app stays
 // alive for the entire worker lifetime (all spec files, all describe blocks).
@@ -250,6 +253,7 @@ function registerCleanup(): void {
       mainPage = null;
     }
     fs.rmSync(e2eStateSandboxDir, { recursive: true, force: true });
+    fs.rmSync(e2eUserDataDir, { recursive: true, force: true });
   });
 
   // Synchronous fallback for abrupt termination
@@ -259,9 +263,15 @@ function registerCleanup(): void {
     } catch {
       // best-effort
     }
+    try {
+      fs.rmSync(e2eUserDataDir, { recursive: true, force: true });
+    } catch {
+      // best-effort
+    }
   });
 }
 
 registerCleanup();
 
 export { expect };
+

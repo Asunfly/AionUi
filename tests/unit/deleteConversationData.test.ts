@@ -170,4 +170,28 @@ describe('deleteConversationData', () => {
     expect(success).toBe(true);
     expect(deleteMocks.movePathToTrash).not.toHaveBeenCalled();
   });
+
+  it('deletes file-only legacy conversations even when they were never migrated to the database', async () => {
+    deleteMocks.getConversation.mockReturnValue({
+      success: false,
+      error: 'Conversation not found',
+    });
+    deleteMocks.getLegacyHistory.mockResolvedValue([
+      {
+        id: 'legacy-only',
+        extra: {
+          workspace: '/tmp/aionui-work/gemini-temp-legacy',
+          customWorkspace: false,
+        },
+      },
+    ]);
+
+    const { deleteConversationData } = await import('../../src/process/services/conversation/deleteConversationData');
+    const success = await deleteConversationData('legacy-only');
+
+    expect(success).toBe(true);
+    expect(deleteMocks.deleteConversation).not.toHaveBeenCalled();
+    expect(deleteMocks.deleteLegacyConversationStorage).toHaveBeenCalledWith('legacy-only');
+    expect(deleteMocks.movePathToTrash).toHaveBeenCalledWith(path.join('/tmp/aionui-work', 'gemini-temp-legacy'));
+  });
 });

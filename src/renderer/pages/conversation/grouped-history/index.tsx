@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
@@ -141,7 +141,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({ onSes
           </div>
 
           <div className='flex items-center gap-8px mb-20px text-14px text-t-secondary'>
-            <span>💡</span>
+            <span>馃挕</span>
             <span>{t('conversation.history.exportDialogHint')}</span>
           </div>
 
@@ -199,13 +199,13 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({ onSes
           <div className='rd-8px bg-fill-1 p-10px flex flex-col gap-8px border border-solid border-[rgba(var(--primary-6),0.08)]'>
             <div className='text-12px leading-18px text-t-secondary'>{t('conversation.history.selectedCount', { count: selectedCount })}</div>
             <div className='grid grid-cols-2 gap-6px'>
-              <Button className='!col-span-2 !w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap' size='mini' type='secondary' onClick={handleToggleSelectAll}>
+              <Button data-testid='conversation-batch-select-all' className='!col-span-2 !w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap' size='mini' type='secondary' onClick={handleToggleSelectAll}>
                 {allSelected ? t('common.cancel') : t('conversation.history.selectAll')}
               </Button>
-              <Button className='!w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap' size='mini' type='secondary' onClick={handleBatchExport}>
+              <Button data-testid='conversation-batch-export' className='!w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap' size='mini' type='secondary' onClick={handleBatchExport}>
                 {t('conversation.history.batchExport')}
               </Button>
-              <Button className='!w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap' size='mini' status='warning' onClick={handleBatchDelete}>
+              <Button data-testid='conversation-batch-delete' className='!w-full !justify-center !min-w-0 !h-30px !px-8px !text-12px whitespace-nowrap' size='mini' status='warning' onClick={handleBatchDelete}>
                 {t('conversation.history.batchDelete')}
               </Button>
             </div>
@@ -245,6 +245,7 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({ onSes
                       expanded={expandedWorkspaces.includes(group.workspace)}
                       onToggle={() => handleToggleWorkspace(group.workspace)}
                       siderCollapsed={collapsed}
+                      toggleTestId={`workspace-group-toggle-${group.displayName}`}
                       header={
                         <div className='flex items-center gap-8px text-14px min-w-0'>
                           <span className='font-medium truncate flex-1 text-t-primary min-w-0'>{group.displayName}</span>
@@ -271,3 +272,6 @@ const WorkspaceGroupedHistory: React.FC<WorkspaceGroupedHistoryProps> = ({ onSes
 };
 
 export default WorkspaceGroupedHistory;
+
+
+

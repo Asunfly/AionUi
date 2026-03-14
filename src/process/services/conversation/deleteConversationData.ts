@@ -93,12 +93,19 @@ export async function deleteConversationData(conversationId: string): Promise<bo
   const dbConversationResult = db.getConversation(conversationId);
   const legacyConversations = await getLegacyConversations();
   const legacyConversation = legacyConversations.find((conversation) => conversation.id === conversationId);
-  const conversation = (dbConversationResult.success ? dbConversationResult.data : null) || legacyConversation;
+  const databaseConversation = dbConversationResult.success ? dbConversationResult.data : null;
+  const conversation = databaseConversation || legacyConversation;
+
+  if (!conversation) {
+    return false;
+  }
 
   const workspaceToDelete = await getWorkspaceToDelete(conversationId, conversation || undefined);
-  const deleteResult = db.deleteConversation(conversationId);
-  if (!deleteResult.success) {
-    return false;
+  if (databaseConversation) {
+    const deleteResult = db.deleteConversation(conversationId);
+    if (!deleteResult.success) {
+      return false;
+    }
   }
 
   await deleteLegacyConversationStorage(conversationId).catch((error) => {

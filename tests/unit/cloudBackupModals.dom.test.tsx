@@ -227,13 +227,16 @@ describe('cloud backup modals', () => {
     });
   });
 
-  it('shows restore progress, surfaces inline errors, and exposes restart action after success', async () => {
+  it('shows restore progress, allows cancel before restoring, surfaces inline errors, and exposes restart action after success', async () => {
     const onRestart = vi.fn().mockResolvedValue(undefined);
     const onClose = vi.fn();
+    const onCancelTask = vi.fn().mockResolvedValue(undefined);
 
-    const { rerender } = render(<CloudBackupRestoreProgressModal visible fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip' requestId='restore-req' taskEvent={null} currentPlatform='win32' onClose={onClose} onRestart={onRestart} />);
+    const { rerender } = render(<CloudBackupRestoreProgressModal visible fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip' requestId='restore-req' taskEvent={null} currentPlatform='win32' onClose={onClose} onRestart={onRestart} onCancelTask={onCancelTask} />);
 
     expect(screen.getByText('preparing')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }));
+    expect(onCancelTask).toHaveBeenCalledWith('restore-req');
 
     rerender(
       <CloudBackupRestoreProgressModal
@@ -252,10 +255,12 @@ describe('cloud backup modals', () => {
         currentPlatform='win32'
         onClose={onClose}
         onRestart={onRestart}
+        onCancelTask={onCancelTask}
       />
     );
 
     expect(screen.getByText('restoring')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'common.cancel' })).not.toBeInTheDocument();
 
     rerender(
       <CloudBackupRestoreProgressModal
@@ -275,6 +280,7 @@ describe('cloud backup modals', () => {
         currentPlatform='win32'
         onClose={onClose}
         onRestart={onRestart}
+        onCancelTask={onCancelTask}
       />
     );
 
@@ -322,6 +328,7 @@ describe('cloud backup modals', () => {
         currentPlatform='win32'
         onClose={onClose}
         onRestart={onRestart}
+        onCancelTask={onCancelTask}
       />
     );
 
