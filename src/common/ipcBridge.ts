@@ -147,6 +147,10 @@ export const autoUpdate = {
   status: bridge.buildEmitter<AutoUpdateStatus>('auto-update.status'),
 };
 
+export const starOffice = {
+  detectUrl: bridge.buildProvider<IBridgeResponse<{ url: string | null }>, { preferredUrl?: string; force?: boolean; timeoutMs?: number }>('star-office.detect-url'),
+};
+
 export const dialog = {
   showOpen: bridge.buildProvider<string[] | undefined, { defaultPath?: string; properties?: OpenDialogOptions['properties']; filters?: OpenDialogOptions['filters'] } | undefined>('show-open'), // 打开文件/文件夹选择窗口
 };
@@ -400,6 +404,8 @@ export const systemSettings = {
   getCloseToTray: bridge.buildProvider<boolean, void>('system-settings:get-close-to-tray'),
   setCloseToTray: bridge.buildProvider<void, { enabled: boolean }>('system-settings:set-close-to-tray'),
   changeLanguage: bridge.buildProvider<void, { language: string }>('system-settings:change-language'),
+  // Broadcast language change to all renderers (desktop + WebUI) for real-time sync
+  languageChanged: bridge.buildEmitter<{ language: string }>('system-settings:language-changed'),
 };
 
 // WebUI 服务管理接口 / WebUI service management API
@@ -496,6 +502,8 @@ interface ISendMessageParams {
   conversation_id: string;
   files?: string[];
   loading_id?: string;
+  /** Skill names to inject into the message (used by agents with file-reading ability) */
+  injectSkills?: string[];
 }
 
 // Unified confirm message params for all agents (Gemini, ACP, Codex)
