@@ -127,7 +127,7 @@ describe('cloud backup modals', () => {
       />
     );
 
-    expect(screen.getByText('uploading')).toBeInTheDocument();
+    expect(screen.getByText('preparing')).toBeInTheDocument();
     expect(screen.getByDisplayValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip')).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: /cancel|取消/i }));

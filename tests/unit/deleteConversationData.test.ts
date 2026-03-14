@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const deleteMocks = vi.hoisted(() => ({
@@ -85,7 +86,7 @@ describe('deleteConversationData', () => {
 
     expect(success).toBe(true);
     expect(deleteMocks.deleteLegacyConversationStorage).toHaveBeenCalledWith('conv-1');
-    expect(deleteMocks.movePathToTrash).toHaveBeenCalledWith('/tmp/aionui-work/gemini-temp-1');
+    expect(deleteMocks.movePathToTrash).toHaveBeenCalledWith(path.join('/tmp/aionui-work', 'gemini-temp-1'));
   });
 
   it('does not delete custom or shared workspaces', async () => {
@@ -138,6 +139,35 @@ describe('deleteConversationData', () => {
     const secondSuccess = await reimported.deleteConversationData('conv-3');
 
     expect(secondSuccess).toBe(true);
+    expect(deleteMocks.movePathToTrash).not.toHaveBeenCalled();
+  });
+
+  it('does not delete the default workspace when a channel session still references it', async () => {
+    deleteMocks.getConversation.mockReturnValue({
+      success: true,
+      data: {
+        id: 'conv-1',
+        extra: {
+          workspace: '/tmp/aionui-work/gemini-temp-1',
+          customWorkspace: false,
+        },
+      },
+    });
+    deleteMocks.getChannelSessions.mockReturnValue({
+      success: true,
+      data: [
+        {
+          id: 'session-1',
+          conversationId: 'conv-2',
+          workspace: '/tmp/aionui-work/gemini-temp-1',
+        },
+      ],
+    });
+
+    const { deleteConversationData } = await import('../../src/process/services/conversation/deleteConversationData');
+    const success = await deleteConversationData('conv-1');
+
+    expect(success).toBe(true);
     expect(deleteMocks.movePathToTrash).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const bridgeHandlers: Record<string, ((payload: any) => Promise<any>) | undefined> = {};
@@ -79,6 +80,9 @@ describe('fsBridge removeEntry', () => {
   });
 
   it('moves files to trash and emits a delete stream event', async () => {
+    const filePath = path.join('/tmp', 'work', 'demo.txt');
+    const workspacePath = path.dirname(filePath);
+
     fsBridgeMocks.lstat.mockResolvedValue({
       isDirectory: () => false,
     });
@@ -87,13 +91,13 @@ describe('fsBridge removeEntry', () => {
     const handler = bridgeHandlers.removeEntry;
     expect(handler).toBeTypeOf('function');
 
-    const result = await handler?.({ path: '/tmp/work/demo.txt' });
+    const result = await handler?.({ path: filePath });
 
-    expect(fsBridgeMocks.movePathToTrash).toHaveBeenCalledWith('/tmp/work/demo.txt');
+    expect(fsBridgeMocks.movePathToTrash).toHaveBeenCalledWith(filePath);
     expect(fsBridgeMocks.emit).toHaveBeenCalledWith({
-      filePath: '/tmp/work/demo.txt',
+      filePath,
       content: '',
-      workspace: '/tmp/work',
+      workspace: workspacePath,
       relativePath: 'demo.txt',
       operation: 'delete',
     });
@@ -101,6 +105,8 @@ describe('fsBridge removeEntry', () => {
   });
 
   it('moves directories to trash without emitting file delete events', async () => {
+    const dirPath = path.join('/tmp', 'work', 'demo-dir');
+
     fsBridgeMocks.lstat.mockResolvedValue({
       isDirectory: () => true,
     });
@@ -109,9 +115,9 @@ describe('fsBridge removeEntry', () => {
     const handler = bridgeHandlers.removeEntry;
     expect(handler).toBeTypeOf('function');
 
-    const result = await handler?.({ path: '/tmp/work/demo-dir' });
+    const result = await handler?.({ path: dirPath });
 
-    expect(fsBridgeMocks.movePathToTrash).toHaveBeenCalledWith('/tmp/work/demo-dir');
+    expect(fsBridgeMocks.movePathToTrash).toHaveBeenCalledWith(dirPath);
     expect(fsBridgeMocks.emit).not.toHaveBeenCalled();
     expect(result).toEqual({ success: true });
   });

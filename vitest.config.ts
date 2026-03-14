@@ -69,12 +69,17 @@ export default defineConfig({
         'src/renderer/services/cloudBackupScheduler.ts',
         'src/renderer/components/SettingsModal/contents/CloudBackupRemarkModal.tsx',
         'src/renderer/components/SettingsModal/contents/CloudBackupRestoreModal.tsx',
+        'src/renderer/components/SettingsModal/contents/CloudBackupRestoreProgressModal.tsx',
         // Extension system (only files with existing tests)
         'src/extensions/ExtensionLoader.ts',
         'src/extensions/{dependencyResolver,pathSafety,statePersistence,entryPointResolver,envResolver,fileResolver}.ts',
         'src/extensions/resolvers/WebuiResolver.ts',
         // Backup
         'src/process/services/backup/BackupService.ts',
+        'src/process/services/backup/backupPaths.ts',
+        'src/process/services/backup/restoreRecovery.ts',
+        'src/process/services/conversation/deleteConversationData.ts',
+        'src/process/services/system/TrashService.ts',
       ],
       thresholds: {
         statements: 30,
