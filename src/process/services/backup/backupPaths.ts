@@ -95,6 +95,15 @@ export function getManagedBackupEntries(dbSnapshotPath: string): IManagedBackupE
   ];
 }
 
+export function filterManagedBackupEntriesByKeys(entries: IManagedBackupEntry[], entryKeys: string[]): IManagedBackupEntry[] {
+  if (!entryKeys.length) {
+    return [];
+  }
+
+  const keySet = new Set(entryKeys);
+  return entries.filter((entry) => keySet.has(entry.key));
+}
+
 export function getCurrentManagedBackupEntries(): IManagedBackupEntry[] {
   const context = getBackupPathContext();
   return getManagedBackupEntries(path.join(context.dataDir, 'aionui.db'));

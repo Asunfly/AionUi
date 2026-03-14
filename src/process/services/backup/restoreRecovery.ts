@@ -10,7 +10,7 @@ import { copyDirectoryRecursively, ensureDirectory } from '@/process/utils';
 import fs from 'fs/promises';
 import path from 'path';
 import type { IManagedBackupEntry } from './backupPaths';
-import { getBackupPathContext, getCurrentManagedBackupEntries } from './backupPaths';
+import { filterManagedBackupEntriesByKeys, getBackupPathContext, getCurrentManagedBackupEntries } from './backupPaths';
 
 const RESTORE_RECOVERY_STATE_VERSION = 1;
 const RESTORE_RECOVERY_ROOT_NAME = 'restore-recovery';
@@ -24,6 +24,7 @@ interface IPendingRestoreRecoveryState {
   sourcePlatform: string;
   createdAt: string;
   snapshotDir: string;
+  managedEntryKeys?: string[];
   relativeRoots: string[];
   startupAttempts: number;
   lastStartupAt?: string;
@@ -159,6 +160,7 @@ async function readPendingRestoreRecoveryState(): Promise<IPendingRestoreRecover
       sourcePlatform: parsed.sourcePlatform,
       createdAt: parsed.createdAt,
       snapshotDir: parsed.snapshotDir,
+      managedEntryKeys: Array.isArray(parsed.managedEntryKeys) ? parsed.managedEntryKeys.filter((item): item is string => typeof item === 'string') : undefined,
       relativeRoots: parsed.relativeRoots.filter((item): item is string => typeof item === 'string'),
       startupAttempts: parsed.startupAttempts,
       lastStartupAt: typeof parsed.lastStartupAt === 'string' ? parsed.lastStartupAt : undefined,
@@ -178,7 +180,8 @@ async function rollbackPendingRestoreRecovery(state: IPendingRestoreRecoveryStat
   WorkerManage.clear();
   closeDatabase();
 
-  const entries = getCurrentManagedBackupEntries();
+  const currentEntries = getCurrentManagedBackupEntries();
+  const entries = state.managedEntryKeys?.length ? filterManagedBackupEntriesByKeys(currentEntries, state.managedEntryKeys) : currentEntries;
   await replaceManagedData(entries, state.snapshotDir);
   await replaceDefaultWorkspaceDirectories(state.relativeRoots, state.snapshotDir);
   getDatabase();
@@ -210,6 +213,7 @@ export async function preparePendingRestoreRecovery(entries: IManagedBackupEntry
     sourcePlatform,
     createdAt: new Date().toISOString(),
     snapshotDir,
+    managedEntryKeys: entries.map((entry) => entry.key),
     relativeRoots,
     startupAttempts: 0,
   });

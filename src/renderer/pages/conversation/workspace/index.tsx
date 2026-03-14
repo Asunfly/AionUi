@@ -325,6 +325,7 @@ const ChatWorkspace: React.FC<WorkspaceProps> = ({ conversation_id, workspace, e
         ...(currentConversation.extra ?? {}),
         workspace: targetWorkspace,
         customWorkspace: true,
+        workspaceSource: 'migrated',
       };
 
       await ipcBridge.conversation.createWithConversation.invoke({

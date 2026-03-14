@@ -64,6 +64,8 @@ export interface IBackupManifest {
   sourceArch: string;
   sourceHostname: string;
   includedSections: string[];
+  /** Fixed managed entry keys actually packaged in this backup. */
+  managedEntryKeys?: string[];
   defaultWorkspaceFiles: {
     included: boolean;
     relativeRoots: string[];

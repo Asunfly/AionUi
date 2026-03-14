@@ -153,12 +153,15 @@ export interface TokenUsageData {
   totalTokens: number;
 }
 
+export type TWorkspaceSource = 'temporary' | 'manual' | 'migrated';
+
 export type TChatConversation =
   | IChatConversation<
       'gemini',
       {
         workspace: string;
         customWorkspace?: boolean; // true 用户指定工作目录 false 系统默认工作目录
+        workspaceSource?: TWorkspaceSource;
         webSearchEngine?: 'google' | 'default'; // 搜索引擎配置
         lastTokenUsage?: TokenUsageData; // 上次的 token 使用统计
         contextFileName?: string;
@@ -187,6 +190,7 @@ export type TChatConversation =
           backend: AcpBackend;
           cliPath?: string;
           customWorkspace?: boolean;
+          workspaceSource?: TWorkspaceSource;
           agentName?: string;
           customAgentId?: string; // UUID for identifying specific custom agent
           presetContext?: string; // 智能助手的预设规则/提示词 / Preset context from smart assistant
@@ -223,6 +227,7 @@ export type TChatConversation =
           workspace?: string;
           cliPath?: string;
           customWorkspace?: boolean;
+          workspaceSource?: TWorkspaceSource;
           sandboxMode?: 'read-only' | 'workspace-write' | 'danger-full-access'; // Codex sandbox permission mode
           presetContext?: string; // 智能助手的预设规则/提示词 / Preset context from smart assistant
           /** 启用的 skills 列表，用于过滤 SkillManager 加载的 skills / Enabled skills list for filtering SkillManager skills */
@@ -251,6 +256,7 @@ export type TChatConversation =
           backend?: AcpBackendAll;
           agentName?: string;
           customWorkspace?: boolean;
+          workspaceSource?: TWorkspaceSource;
           /** Gateway configuration */
           gateway?: {
             host?: string;
@@ -292,6 +298,7 @@ export type TChatConversation =
         {
           workspace?: string;
           customWorkspace?: boolean;
+          workspaceSource?: TWorkspaceSource;
           /** 启用的 skills 列表 / Enabled skills list */
           enabledSkills?: string[];
           /** 预设助手 ID / Preset assistant ID */

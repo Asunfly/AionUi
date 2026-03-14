@@ -5,11 +5,11 @@
  */
 
 import { ipcBridge } from '@/common';
-import type { TChatConversation } from '@/common/storage';
+import type { TChatConversation, TWorkspaceSource } from '@/common/storage';
 import { emitter } from '@/renderer/utils/emitter';
 import { blockMobileInputFocus, blurActiveElement } from '@/renderer/utils/focus';
 import { Message, Modal } from '@arco-design/web-react';
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -99,17 +99,135 @@ export const useConversationActions = ({ batchMode, conversations, onSessionClic
     [id, navigate]
   );
 
-  const shouldWarnWorkspaceCleanup = useCallback((conversation: TChatConversation): boolean => {
-    return !conversation.extra?.customWorkspace && Boolean(conversation.extra?.workspace);
+  const getDeleteWorkspaceMode = useCallback((conversation: TChatConversation): TWorkspaceSource | null => {
+    const extra = conversation.extra as
+      | {
+          workspace?: string;
+          customWorkspace?: boolean;
+          workspaceSource?: TWorkspaceSource;
+        }
+      | undefined;
+    if (!extra?.workspace) {
+      return null;
+    }
+
+    if (!extra.customWorkspace) {
+      return 'temporary';
+    }
+
+    return extra.workspaceSource === 'migrated' ? 'migrated' : 'manual';
   }, []);
+
+  const buildDeleteReminderContent = useCallback(
+    (workspaceMode: TWorkspaceSource | null) => {
+      if (!workspaceMode) {
+        return <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.deleteConfirm')}</div>;
+      }
+
+      const reminderMeta = {
+        temporary: {
+          label: t('conversation.history.deleteImpactTemporary'),
+          detail: t('conversation.history.deleteImpactTemporaryDetail'),
+          accentClass: 'bg-[rgba(var(--warning-6),0.12)] text-[rgb(var(--warning-6))] border-[rgba(var(--warning-6),0.18)]',
+        },
+        migrated: {
+          label: t('conversation.history.deleteImpactMigrated'),
+          detail: t('conversation.history.deleteImpactMigratedDetail'),
+          accentClass: 'bg-[rgba(var(--primary-6),0.10)] text-[rgb(var(--primary-6))] border-[rgba(var(--primary-6),0.18)]',
+        },
+        manual: {
+          label: t('conversation.history.deleteImpactManual'),
+          detail: t('conversation.history.deleteImpactManualDetail'),
+          accentClass: 'bg-[var(--color-fill-2)] text-[var(--color-text-1)] border-[var(--color-border-2)]',
+        },
+      }[workspaceMode];
+
+      return (
+        <div className='space-y-12px'>
+          <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.deleteConfirm')}</div>
+          <div className='rounded-12px bg-[var(--color-fill-1)] p-12px'>
+            <div className='text-12px font-500 leading-5 text-[var(--color-text-3)]'>{t('conversation.history.deleteImpactTitle')}</div>
+            <div className={`mt-8px inline-flex items-center rounded-full border px-8px py-4px text-12px font-600 leading-none ${reminderMeta.accentClass}`}>{reminderMeta.label}</div>
+            <div className='mt-10px text-13px leading-5 text-[var(--color-text-1)]'>{reminderMeta.detail}</div>
+          </div>
+        </div>
+      );
+    },
+    [t]
+  );
+
+  const buildBatchDeleteReminderContent = useCallback(
+    (selectedConversations: TChatConversation[]) => {
+      const reminderCounts = selectedConversations.reduce(
+        (acc, conversation) => {
+          const workspaceMode = getDeleteWorkspaceMode(conversation);
+          if (workspaceMode) {
+            acc[workspaceMode] += 1;
+          }
+          return acc;
+        },
+        {
+          temporary: 0,
+          migrated: 0,
+          manual: 0,
+        } satisfies Record<TWorkspaceSource, number>
+      );
+
+      const reminderItems = (
+        [
+          {
+            key: 'temporary',
+            label: t('conversation.history.deleteImpactTemporary'),
+            detail: t('conversation.history.deleteImpactTemporaryDetail'),
+            accentClass: 'bg-[rgba(var(--warning-6),0.12)] text-[rgb(var(--warning-6))] border-[rgba(var(--warning-6),0.18)]',
+          },
+          {
+            key: 'migrated',
+            label: t('conversation.history.deleteImpactMigrated'),
+            detail: t('conversation.history.deleteImpactMigratedDetail'),
+            accentClass: 'bg-[rgba(var(--primary-6),0.10)] text-[rgb(var(--primary-6))] border-[rgba(var(--primary-6),0.18)]',
+          },
+          {
+            key: 'manual',
+            label: t('conversation.history.deleteImpactManual'),
+            detail: t('conversation.history.deleteImpactManualDetail'),
+            accentClass: 'bg-[var(--color-fill-2)] text-[var(--color-text-1)] border-[var(--color-border-2)]',
+          },
+        ] as const
+      ).filter((item) => reminderCounts[item.key] > 0);
+
+      if (reminderItems.length === 0) {
+        return <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size })}</div>;
+      }
+
+      return (
+        <div className='space-y-12px'>
+          <div className='text-14px leading-6 text-[var(--color-text-2)]'>{t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size })}</div>
+          <div className='rounded-12px bg-[var(--color-fill-1)] p-12px'>
+            <div className='text-12px font-500 leading-5 text-[var(--color-text-3)]'>{t('conversation.history.deleteImpactTitle')}</div>
+            <div className='mt-8px space-y-8px'>
+              {reminderItems.map((item) => (
+                <div key={item.key} className='rounded-10px bg-[var(--color-bg-1)] p-10px'>
+                  <div className={`inline-flex items-center rounded-full border px-8px py-4px text-12px font-600 leading-none ${item.accentClass}`}>
+                    {item.label} · {reminderCounts[item.key]}
+                  </div>
+                  <div className='mt-8px text-13px leading-5 text-[var(--color-text-1)]'>{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    },
+    [getDeleteWorkspaceMode, selectedConversationIds.size, t]
+  );
 
   const handleDeleteClick = useCallback(
     (conversation: TChatConversation) => {
-      const shouldCleanupWorkspace = shouldWarnWorkspaceCleanup(conversation);
-      const content = shouldCleanupWorkspace ? `${t('conversation.history.deleteConfirm')}\n\n${t('conversation.history.deleteWorkspaceCleanupHint' as never)}` : t('conversation.history.deleteConfirm');
+      const workspaceMode = getDeleteWorkspaceMode(conversation);
       Modal.confirm({
         title: t('conversation.history.deleteTitle'),
-        content,
+        content: buildDeleteReminderContent(workspaceMode),
         okText: t('conversation.history.confirmDelete'),
         cancelText: t('conversation.history.cancelDelete'),
         okButtonProps: { status: 'warning' },
@@ -132,7 +250,7 @@ export const useConversationActions = ({ batchMode, conversations, onSessionClic
         getPopupContainer: () => document.body,
       });
     },
-    [removeConversation, shouldWarnWorkspaceCleanup, t]
+    [buildDeleteReminderContent, getDeleteWorkspaceMode, removeConversation, t]
   );
 
   const handleBatchDelete = useCallback(() => {
@@ -142,12 +260,10 @@ export const useConversationActions = ({ batchMode, conversations, onSessionClic
     }
 
     const selectedConversations = conversations.filter((conversation) => selectedConversationIds.has(conversation.id));
-    const shouldCleanupWorkspace = selectedConversations.some((conversation) => shouldWarnWorkspaceCleanup(conversation));
-    const content = shouldCleanupWorkspace ? `${t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size })}\n\n${t('conversation.history.batchDeleteWorkspaceCleanupHint' as never)}` : t('conversation.history.batchDeleteConfirm', { count: selectedConversationIds.size });
 
     Modal.confirm({
       title: t('conversation.history.batchDelete'),
-      content,
+      content: buildBatchDeleteReminderContent(selectedConversations),
       okText: t('conversation.history.confirmDelete'),
       cancelText: t('conversation.history.cancelDelete'),
       okButtonProps: { status: 'warning' },
@@ -174,7 +290,7 @@ export const useConversationActions = ({ batchMode, conversations, onSessionClic
       alignCenter: true,
       getPopupContainer: () => document.body,
     });
-  }, [conversations, onBatchModeChange, removeConversation, selectedConversationIds, shouldWarnWorkspaceCleanup, t, setSelectedConversationIds]);
+  }, [buildBatchDeleteReminderContent, conversations, onBatchModeChange, removeConversation, selectedConversationIds, t, setSelectedConversationIds]);
 
   const handleEditStart = useCallback((conversation: TChatConversation) => {
     setRenameModalId(conversation.id);

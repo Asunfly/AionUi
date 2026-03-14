@@ -22,7 +22,7 @@ AionUi 里那个“**查看坚果云 WebDAV 说明**”，看这篇就对了。
 
 `账号下拉` → `账号信息` → `安全选项` → `第三方应用管理`
 
-![坚果云安全选项与第三方应用管理](./image1.png)
+![坚果云安全选项与第三方应用管理](./jianguoyun-backup-guide/01-security-options.png)
 
 ## 3. 哎嗨，怎么提示下载客户端？
 
@@ -36,7 +36,7 @@ AionUi 里那个“**查看坚果云 WebDAV 说明**”，看这篇就对了。
 
 `账号信息` → `安全选项` → `第三方应用管理`
 
-![坚果云账号下拉与切换版本](./image2.png)
+![坚果云账号下拉与切换版本](./jianguoyun-backup-guide/02-switch-version.png)
 
 ## 4. 添加应用密码
 
@@ -50,7 +50,7 @@ AionUi 里那个“**查看坚果云 WebDAV 说明**”，看这篇就对了。
 
 别写错了：**这里要的是应用密码，不是网页登录密码。**
 
-![坚果云第三方应用管理与应用密码](./image3.png)
+![坚果云第三方应用管理与应用密码](./jianguoyun-backup-guide/03-app-password.png)
 
 ## 5. 回 AionUi 填上去
 
@@ -62,7 +62,7 @@ AionUi 里那个“**查看坚果云 WebDAV 说明**”，看这篇就对了。
 - 密码 / 应用密码：刚刚复制的应用密码
 - 远端目录：`/AionUibackup`
 
-![AionUi 坚果云备份配置](./image4.png)
+![AionUi 坚果云备份配置](./jianguoyun-backup-guide/04-aionui-config.png)
 
 ## 打完收工
 

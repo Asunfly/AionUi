@@ -20,7 +20,7 @@ import path from 'path';
 import WorkerManage from '@/process/WorkerManage';
 import { copyDirectoryRecursively, ensureDirectory } from '@/process/utils';
 import type { IManagedBackupEntry } from './backupPaths';
-import { getBackupPathContext, getCurrentManagedBackupEntries, getManagedBackupEntries } from './backupPaths';
+import { filterManagedBackupEntriesByKeys, getBackupPathContext, getCurrentManagedBackupEntries, getManagedBackupEntries } from './backupPaths';
 import { BackupTaskError, getBackupErrorCode, isAbortLikeError } from './BackupTaskError';
 import { confirmPendingRestoreRecovery, preparePendingRestoreRecovery } from './restoreRecovery';
 import { CloudWebDavClient } from './WebDavClient';
@@ -291,15 +291,15 @@ export class BackupService {
 
         this.emitTask({ task: 'restore', phase: 'validating', fileName, requestId });
         const manifest = await this.extractAndValidateArchive(archiveBuffer, stagingDir);
+        const restoreEntries = this.resolveManifestManagedEntries(manifest);
 
         WorkerManage.clear();
         closeDatabase();
 
-        const currentEntries = getCurrentManagedBackupEntries();
-        await this.createRollbackSnapshot(currentEntries, rollbackDir);
+        await this.createRollbackSnapshot(restoreEntries, rollbackDir);
         await this.createWorkspaceRollbackSnapshot(manifest.defaultWorkspaceFiles.relativeRoots, rollbackDir);
         try {
-          await preparePendingRestoreRecovery(currentEntries, manifest.defaultWorkspaceFiles.relativeRoots, fileName, manifest.sourcePlatform);
+          await preparePendingRestoreRecovery(restoreEntries, manifest.defaultWorkspaceFiles.relativeRoots, fileName, manifest.sourcePlatform);
           pendingRecoveryPrepared = true;
         } catch (prepareError) {
           await confirmPendingRestoreRecovery().catch((): void => undefined);
@@ -308,11 +308,11 @@ export class BackupService {
 
         try {
           this.emitTask({ task: 'restore', phase: 'restoring', fileName, requestId });
-          await this.replaceManagedData(currentEntries, stagingDir);
+          await this.replaceManagedData(restoreEntries, stagingDir);
           await this.replaceDefaultWorkspaceDirectories(manifest.defaultWorkspaceFiles.relativeRoots, stagingDir);
           await this.rewriteManagedWorkspacePaths(manifest);
         } catch (restoreError) {
-          await this.replaceManagedData(currentEntries, rollbackDir);
+          await this.replaceManagedData(restoreEntries, rollbackDir);
           await this.replaceDefaultWorkspaceDirectories(manifest.defaultWorkspaceFiles.relativeRoots, rollbackDir);
           if (pendingRecoveryPrepared) {
             await confirmPendingRestoreRecovery().catch((): void => undefined);
@@ -422,6 +422,7 @@ export class BackupService {
         exists: await exists(entry.sourcePath),
       }))
     );
+    const managedEntryKeys = includedSections.filter((item) => item.exists).map((item) => item.key);
 
     return {
       backupSchemaVersion: CLOUD_BACKUP_SCHEMA_VERSION,
@@ -432,7 +433,8 @@ export class BackupService {
       sourcePlatform: process.platform,
       sourceArch: process.arch,
       sourceHostname: os.hostname(),
-      includedSections: [...includedSections.filter((item) => item.exists).map((item) => item.key), ...(workspaceDirectories.length > 0 ? ['defaultWorkspaceFiles'] : [])],
+      includedSections: [...managedEntryKeys, ...(workspaceDirectories.length > 0 ? ['defaultWorkspaceFiles'] : [])],
+      managedEntryKeys,
       defaultWorkspaceFiles: {
         included: settings.includeDefaultWorkspaceFiles,
         relativeRoots: workspaceDirectories.map((item) => item.relativePath),
@@ -508,6 +510,7 @@ export class BackupService {
     const manifest = JSON.parse(await manifestEntry.async('string')) as IBackupManifest;
     const rawRelativeRoots = manifest.defaultWorkspaceFiles?.relativeRoots || [];
     const normalizedRelativeRoots = rawRelativeRoots.map((item) => normalizeManagedWorkspaceRelativePath(item));
+    const managedEntryKeys = Array.isArray(manifest.managedEntryKeys) && manifest.managedEntryKeys.length > 0 ? manifest.managedEntryKeys.filter((item): item is string => typeof item === 'string') : (manifest.includedSections || []).filter((item): item is string => typeof item === 'string' && item !== 'defaultWorkspaceFiles');
     if (manifest.backupSchemaVersion !== CLOUD_BACKUP_SCHEMA_VERSION) {
       throw new Error('Unsupported backup schema version.');
     }
@@ -525,6 +528,7 @@ export class BackupService {
       included: manifest.defaultWorkspaceFiles?.included === true,
       relativeRoots: normalizedRelativeRoots.filter((item): item is string => Boolean(item)),
     };
+    manifest.managedEntryKeys = managedEntryKeys;
 
     ensureDirectory(targetDir);
 
@@ -541,6 +545,19 @@ export class BackupService {
     );
 
     return manifest;
+  }
+
+  private resolveManifestManagedEntries(manifest: IBackupManifest): IManagedBackupEntry[] {
+    const manifestEntryKeys = manifest.managedEntryKeys || [];
+    const currentEntries = getCurrentManagedBackupEntries();
+    const restoreEntries = filterManagedBackupEntriesByKeys(currentEntries, manifestEntryKeys);
+
+    const unresolvedEntryKeys = manifestEntryKeys.filter((key) => !restoreEntries.some((entry) => entry.key === key));
+    if (unresolvedEntryKeys.length > 0) {
+      console.warn('[BackupService] Backup manifest contains managed entries that are not recognized by the current application:', unresolvedEntryKeys);
+    }
+
+    return restoreEntries;
   }
 
   private async createRollbackSnapshot(entries: IManagedBackupEntry[], rollbackDir: string): Promise<void> {

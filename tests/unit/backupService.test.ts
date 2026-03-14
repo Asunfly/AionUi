@@ -27,6 +27,17 @@ const restoreRecoveryMocks = vi.hoisted(() => ({
   confirmPendingRestoreRecovery: vi.fn(),
 }));
 
+const backupPathMocks = vi.hoisted(() => ({
+  getBackupPathContext: vi.fn(() => ({
+    cacheDir: path.join(process.cwd(), '.cache-vitest'),
+    workDir: path.join(process.cwd(), '.work-vitest'),
+    dataDir: path.join(process.cwd(), '.data-vitest'),
+  })),
+  getCurrentManagedBackupEntries: vi.fn(() => []),
+  getManagedBackupEntries: vi.fn(() => []),
+  filterManagedBackupEntriesByKeys: vi.fn((entries: Array<{ key: string }>, entryKeys: string[]) => entries.filter((entry) => entryKeys.includes(entry.key))),
+}));
+
 backupServiceMocks.getDatabase.mockImplementation(() => ({
   backup: backupServiceMocks.dbBackup,
   getUserConversations: vi.fn(() => ({
@@ -83,15 +94,7 @@ vi.mock('@/process/utils', () => ({
   getDataPath: vi.fn(() => path.join(process.cwd(), '.data-vitest')),
 }));
 
-vi.mock('../../src/process/services/backup/backupPaths', () => ({
-  getBackupPathContext: vi.fn(() => ({
-    cacheDir: path.join(process.cwd(), '.cache-vitest'),
-    workDir: path.join(process.cwd(), '.work-vitest'),
-    dataDir: path.join(process.cwd(), '.data-vitest'),
-  })),
-  getCurrentManagedBackupEntries: vi.fn(() => []),
-  getManagedBackupEntries: vi.fn(() => []),
-}));
+vi.mock('../../src/process/services/backup/backupPaths', () => backupPathMocks);
 
 vi.mock('../../src/process/services/backup/restoreRecovery', () => restoreRecoveryMocks);
 
@@ -138,6 +141,8 @@ describe('BackupService', () => {
     backupServiceMocks.dbBackup.mockResolvedValue(undefined);
     restoreRecoveryMocks.preparePendingRestoreRecovery.mockResolvedValue(undefined);
     restoreRecoveryMocks.confirmPendingRestoreRecovery.mockResolvedValue(undefined);
+    backupPathMocks.getCurrentManagedBackupEntries.mockReturnValue([]);
+    backupPathMocks.getManagedBackupEntries.mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -260,6 +265,7 @@ describe('BackupService', () => {
       sourceArch: 'x64',
       sourceHostname: 'OFFICE-PC',
       includedSections: ['database'],
+      managedEntryKeys: ['database'],
       defaultWorkspaceFiles: {
         included: false,
         relativeRoots: [] as string[],
@@ -293,6 +299,73 @@ describe('BackupService', () => {
     );
     expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
     expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).not.toHaveBeenCalled();
+  });
+
+  it('restores only the managed entries declared by an older backup manifest', async () => {
+    const service = new BackupService();
+    const createRollbackSnapshot = vi.fn().mockResolvedValue(undefined);
+    const createWorkspaceRollbackSnapshot = vi.fn().mockResolvedValue(undefined);
+    const replaceManagedData = vi.fn().mockResolvedValue(undefined);
+    const replaceDefaultWorkspaceDirectories = vi.fn().mockResolvedValue(undefined);
+    const rewriteManagedWorkspacePaths = vi.fn().mockResolvedValue(undefined);
+    Object.assign(service as unknown as Record<string, unknown>, {
+      createRollbackSnapshot,
+      createWorkspaceRollbackSnapshot,
+      replaceManagedData,
+      replaceDefaultWorkspaceDirectories,
+      rewriteManagedWorkspacePaths,
+    });
+
+    const currentEntries = [
+      {
+        key: 'database',
+        type: 'file' as const,
+        sourcePath: '/source/db',
+        restorePath: '/restore/db',
+        zipPath: 'payload/db/aionui.db',
+      },
+      {
+        key: 'futureCache',
+        type: 'directory' as const,
+        sourcePath: '/source/future-cache',
+        restorePath: '/restore/future-cache',
+        zipPath: 'payload/cache/future-cache',
+      },
+    ];
+    backupPathMocks.getCurrentManagedBackupEntries.mockReturnValue(currentEntries);
+
+    const zip = new JSZip();
+    const manifest = {
+      backupSchemaVersion: 1,
+      appVersion: '1.8.23',
+      dbVersion: CURRENT_DB_VERSION,
+      createdAt: '2026-03-07T15:45:30.000Z',
+      providerType: 'webdav' as const,
+      sourcePlatform: 'linux',
+      sourceArch: 'x64',
+      sourceHostname: 'OFFICE-PC',
+      includedSections: ['database'],
+      defaultWorkspaceFiles: {
+        included: false,
+        relativeRoots: [] as string[],
+      },
+      sourceSystemDirs: {
+        cacheDir: 'cache',
+        workDir: 'work',
+        dataDir: 'data',
+        configDir: 'config',
+      },
+      fileName: 'AionUi_v1_test.zip',
+    };
+    zip.file('manifest.json', JSON.stringify(manifest));
+    zip.file('payload/db/aionui.db', 'sqlite');
+    backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
+
+    await service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req');
+
+    expect(createRollbackSnapshot).toHaveBeenCalledWith([currentEntries[0]], expect.any(String));
+    expect(replaceManagedData).toHaveBeenCalledWith([currentEntries[0]], expect.stringContaining('staging'));
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([currentEntries[0]], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
   });
 
   it('cleans pending restore recovery state when restore fails after snapshotting', async () => {
