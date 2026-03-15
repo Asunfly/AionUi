@@ -294,6 +294,115 @@ describe('BackupService', () => {
     );
   });
 
+  it('extracts explicit directory entries so empty workspace folders survive restore', async () => {
+    const service = new BackupService();
+    const zip = new JSZip();
+    const targetDir = path.join(process.cwd(), '.tmp-vitest', `backup-empty-dir-${Date.now()}`);
+    zip.file(
+      'manifest.json',
+      JSON.stringify({
+        backupSchemaVersion: 1,
+        appVersion: '1.8.23',
+        dbVersion: CURRENT_DB_VERSION,
+        createdAt: '2026-03-07T15:45:30.000Z',
+        providerType: 'webdav',
+        sourcePlatform: 'win32',
+        sourceArch: 'x64',
+        sourceHostname: 'OFFICE-PC',
+        includedSections: ['database', 'defaultWorkspaceFiles'],
+        managedEntryKeys: ['database'],
+        defaultWorkspaceFiles: {
+          included: true,
+          relativeRoots: ['workspace-empty'],
+        },
+        sourceSystemDirs: {
+          cacheDir: 'cache',
+          workDir: 'work',
+          dataDir: 'data',
+          configDir: 'config',
+        },
+        fileName: 'AionUi_v1_test.zip',
+      })
+    );
+    zip.file('payload/db/aionui.db', 'sqlite');
+    zip.folder('payload/workspaces/workspace-empty');
+
+    try {
+      await (
+        service as unknown as {
+          extractAndValidateArchive: (archiveBuffer: Buffer, outputDir: string) => Promise<unknown>;
+        }
+      ).extractAndValidateArchive(await zip.generateAsync({ type: 'nodebuffer' }), targetDir);
+
+      expect(fs.existsSync(path.join(targetDir, 'payload', 'workspaces', 'workspace-empty'))).toBe(true);
+    } finally {
+      await fs.promises.rm(targetDir, { recursive: true, force: true });
+    }
+  });
+
+  it('limits zip extraction concurrency to keep restore memory usage bounded', async () => {
+    const service = new BackupService();
+    const zip = new JSZip();
+    const targetDir = path.join(process.cwd(), '.tmp-vitest', `backup-concurrency-${Date.now()}`);
+    zip.file(
+      'manifest.json',
+      JSON.stringify({
+        backupSchemaVersion: 1,
+        appVersion: '1.8.23',
+        dbVersion: CURRENT_DB_VERSION,
+        createdAt: '2026-03-07T15:45:30.000Z',
+        providerType: 'webdav',
+        sourcePlatform: 'win32',
+        sourceArch: 'x64',
+        sourceHostname: 'OFFICE-PC',
+        includedSections: ['database'],
+        managedEntryKeys: ['database'],
+        defaultWorkspaceFiles: {
+          included: false,
+          relativeRoots: [],
+        },
+        sourceSystemDirs: {
+          cacheDir: 'cache',
+          workDir: 'work',
+          dataDir: 'data',
+          configDir: 'config',
+        },
+        fileName: 'AionUi_v1_test.zip',
+      })
+    );
+    zip.file('payload/db/aionui.db', 'sqlite');
+    for (let index = 0; index < 8; index += 1) {
+      zip.file(`payload/cache/file-${index}.txt`, Buffer.alloc(1024, String(index)));
+    }
+
+    let activeWrites = 0;
+    let maxActiveWrites = 0;
+    const originalWriteFile = fs.promises.writeFile;
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (...args: Parameters<typeof fs.promises.writeFile>) => {
+      activeWrites += 1;
+      maxActiveWrites = Math.max(maxActiveWrites, activeWrites);
+
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return await originalWriteFile(...args);
+      } finally {
+        activeWrites -= 1;
+      }
+    });
+
+    try {
+      await (
+        service as unknown as {
+          extractAndValidateArchive: (archiveBuffer: Buffer, outputDir: string) => Promise<unknown>;
+        }
+      ).extractAndValidateArchive(await zip.generateAsync({ type: 'nodebuffer' }), targetDir);
+
+      expect(maxActiveWrites).toBeLessThanOrEqual(4);
+    } finally {
+      await fs.promises.rm(targetDir, { recursive: true, force: true });
+    }
+  });
+
   it('restores a valid backup package, returns its manifest, and emits request-scoped restore events', async () => {
     const service = new BackupService();
     const zip = new JSZip();

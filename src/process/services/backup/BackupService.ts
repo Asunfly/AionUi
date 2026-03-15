@@ -33,6 +33,7 @@ interface IManagedWorkspaceDirectory {
 }
 
 const WORKSPACE_PAYLOAD_PREFIX = 'payload/workspaces';
+const ZIP_EXTRACTION_CONCURRENCY = 4;
 
 function formatTimestamp(date = new Date()): string {
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -132,6 +133,21 @@ function buildWorkspacePayloadPath(payloadRoot: string, relativePath: string): s
   return path.join(payloadRoot, 'payload', 'workspaces', ...relativePath.split('/').filter(Boolean));
 }
 
+async function runWithConcurrencyLimit<T>(items: T[], concurrency: number, task: (item: T) => Promise<void>): Promise<void> {
+  const normalizedConcurrency = Math.max(1, Math.floor(concurrency));
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(normalizedConcurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const item = items[nextIndex];
+        nextIndex += 1;
+        await task(item);
+      }
+    })
+  );
+}
+
 function normalizeZipEntryPath(value: string): string {
   return value
     .replace(/\\/g, '/')
@@ -157,7 +173,7 @@ function hasZipPayload(zip: JSZip, zipPath: string, type: 'file' | 'directory'):
 }
 
 function resolveSafeZipEntryOutputPath(targetDir: string, entryName: string): string {
-  const portableEntryName = normalizeZipEntryPath(entryName);
+  const portableEntryName = normalizeZipEntryPath(entryName).replace(/\/+$/g, '');
   const portableSegments = portableEntryName.split('/');
   if (!portableEntryName || portableSegments.some((segment) => !segment || segment === '.' || segment === '..')) {
     throw new Error('Backup package contains unsafe file paths.');
@@ -600,17 +616,16 @@ export class BackupService {
 
     ensureDirectory(targetDir);
 
-    await Promise.all(
-      Object.values(zip.files).map(async (entry) => {
-        if (entry.dir) {
-          return;
-        }
+    await runWithConcurrencyLimit(Object.values(zip.files), ZIP_EXTRACTION_CONCURRENCY, async (entry) => {
+      const outputPath = resolveSafeZipEntryOutputPath(targetDir, entry.name);
+      if (entry.dir) {
+        ensureDirectory(outputPath);
+        return;
+      }
 
-        const outputPath = resolveSafeZipEntryOutputPath(targetDir, entry.name);
-        await ensureParentDir(outputPath);
-        await fs.writeFile(outputPath, await entry.async('nodebuffer'));
-      })
-    );
+      await ensureParentDir(outputPath);
+      await fs.writeFile(outputPath, await entry.async('nodebuffer'));
+    });
 
     return manifest;
   }
