@@ -163,7 +163,7 @@ async function readPendingRestoreRecoveryState(): Promise<IPendingRestoreRecover
       snapshotDir: parsed.snapshotDir,
       managedEntryKeys: Array.isArray(parsed.managedEntryKeys) ? parsed.managedEntryKeys.filter((item): item is string => typeof item === 'string') : undefined,
       relativeRoots: parsed.relativeRoots.filter((item): item is string => typeof item === 'string'),
-      phase: parsed.phase === 'verify' ? 'verify' : parsed.startupAttempts > 0 ? 'verify' : 'restoring',
+      phase: parsed.phase === 'verify' ? 'verify' : 'restoring',
       startupAttempts: parsed.startupAttempts,
       lastStartupAt: typeof parsed.lastStartupAt === 'string' ? parsed.lastStartupAt : undefined,
     };

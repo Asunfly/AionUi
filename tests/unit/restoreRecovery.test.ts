@@ -193,4 +193,42 @@ describe('restoreRecovery', () => {
     expect(await fs.readFile(path.join(workspaceRootPath, 'note.txt'), 'utf-8')).toBe('original-workspace');
     await expect(fs.access(path.join(restoreRecoveryState.cacheDir, 'restore-recovery'))).rejects.toThrow();
   });
+
+  it('treats phase-less recovery state as interrupted restore instead of inferring verify mode', async () => {
+    const { beginPendingRestoreRecoveryVerification, preparePendingRestoreRecovery } = await import('../../src/process/services/backup/restoreRecovery');
+
+    await preparePendingRestoreRecovery(restoreRecoveryState.entries, ['default-temp-workspace'], 'AionUi_v1_test.zip', 'win32');
+
+    const statePath = path.join(restoreRecoveryState.cacheDir, 'restore-recovery', 'pending-restore.json');
+    const legacyLikeState = JSON.parse(await fs.readFile(statePath, 'utf-8')) as {
+      version: number;
+      fileName: string;
+      sourcePlatform: string;
+      createdAt: string;
+      snapshotDir: string;
+      managedEntryKeys: string[];
+      relativeRoots: string[];
+      startupAttempts: number;
+    };
+
+    await fs.writeFile(
+      statePath,
+      JSON.stringify({
+        ...legacyLikeState,
+        startupAttempts: 1,
+      }),
+      'utf-8'
+    );
+
+    await fs.writeFile(configFilePath, 'partially-restored-config');
+    await fs.writeFile(path.join(managedDirPath, 'assistant.md'), 'partially-restored-assistant');
+    await fs.writeFile(path.join(workspaceRootPath, 'note.txt'), 'partially-restored-workspace');
+
+    const startupStatus = await beginPendingRestoreRecoveryVerification();
+
+    expect(startupStatus).toBe('rolled_back');
+    expect(await fs.readFile(configFilePath, 'utf-8')).toBe('original-config');
+    expect(await fs.readFile(path.join(managedDirPath, 'assistant.md'), 'utf-8')).toBe('original-assistant');
+    expect(await fs.readFile(path.join(workspaceRootPath, 'note.txt'), 'utf-8')).toBe('original-workspace');
+  });
 });
