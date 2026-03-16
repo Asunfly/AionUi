@@ -118,7 +118,7 @@ describe('restoreRecovery', () => {
     }
   });
 
-  it('prepares recovery state and marks the first restored startup for verification', async () => {
+  it('rolls back immediately on the first startup when restore preparation was interrupted', async () => {
     const { beginPendingRestoreRecoveryVerification, preparePendingRestoreRecovery } = await import('../../src/process/services/backup/restoreRecovery');
 
     await preparePendingRestoreRecovery(restoreRecoveryState.entries, ['default-temp-workspace'], 'AionUi_v1_test.zip', 'win32');
@@ -127,6 +127,7 @@ describe('restoreRecovery', () => {
     const initialState = JSON.parse(await fs.readFile(statePath, 'utf-8')) as {
       fileName: string;
       managedEntryKeys: string[];
+      phase: string;
       relativeRoots: string[];
       startupAttempts: number;
       snapshotDir: string;
@@ -134,27 +135,48 @@ describe('restoreRecovery', () => {
 
     expect(initialState.fileName).toBe('AionUi_v1_test.zip');
     expect(initialState.managedEntryKeys).toEqual(['configFile', 'assistants']);
+    expect(initialState.phase).toBe('restoring');
     expect(initialState.relativeRoots).toEqual(['default-temp-workspace']);
     expect(initialState.startupAttempts).toBe(0);
     expect(await fs.readFile(path.join(initialState.snapshotDir, 'payload', 'cache', 'aionui-config.txt'), 'utf-8')).toBe('original-config');
     expect(await fs.readFile(path.join(initialState.snapshotDir, 'payload', 'workspaces', 'default-temp-workspace', 'note.txt'), 'utf-8')).toBe('original-workspace');
 
+    await fs.writeFile(configFilePath, 'partially-restored-config');
+    await fs.writeFile(path.join(managedDirPath, 'assistant.md'), 'partially-restored-assistant');
+    await fs.writeFile(path.join(workspaceRootPath, 'note.txt'), 'partially-restored-workspace');
+
     const startupStatus = await beginPendingRestoreRecoveryVerification();
+
+    expect(startupStatus).toBe('rolled_back');
+    expect(await fs.readFile(configFilePath, 'utf-8')).toBe('original-config');
+    expect(await fs.readFile(path.join(managedDirPath, 'assistant.md'), 'utf-8')).toBe('original-assistant');
+    expect(await fs.readFile(path.join(workspaceRootPath, 'note.txt'), 'utf-8')).toBe('original-workspace');
+    await expect(fs.access(path.join(restoreRecoveryState.cacheDir, 'restore-recovery'))).rejects.toThrow();
+  });
+
+  it('marks completed restores for verification and rolls back on the next startup when still unconfirmed', async () => {
+    const { beginPendingRestoreRecoveryVerification, markPendingRestoreRecoveryForVerification, preparePendingRestoreRecovery } = await import('../../src/process/services/backup/restoreRecovery');
+
+    await preparePendingRestoreRecovery(restoreRecoveryState.entries, ['default-temp-workspace'], 'AionUi_v1_test.zip', 'win32');
+    await markPendingRestoreRecoveryForVerification();
+
+    const statePath = path.join(restoreRecoveryState.cacheDir, 'restore-recovery', 'pending-restore.json');
+    const verificationState = JSON.parse(await fs.readFile(statePath, 'utf-8')) as {
+      phase: string;
+      startupAttempts: number;
+    };
+    expect(verificationState.phase).toBe('verify');
+    expect(verificationState.startupAttempts).toBe(0);
+
+    const firstStartupStatus = await beginPendingRestoreRecoveryVerification();
     const verifiedState = JSON.parse(await fs.readFile(statePath, 'utf-8')) as {
       startupAttempts: number;
       lastStartupAt?: string;
     };
 
-    expect(startupStatus).toBe('verify');
+    expect(firstStartupStatus).toBe('verify');
     expect(verifiedState.startupAttempts).toBe(1);
     expect(verifiedState.lastStartupAt).toEqual(expect.any(String));
-  });
-
-  it('rolls back managed data and workspace snapshots on the next startup when restore is unconfirmed', async () => {
-    const { beginPendingRestoreRecoveryVerification, preparePendingRestoreRecovery } = await import('../../src/process/services/backup/restoreRecovery');
-
-    await preparePendingRestoreRecovery(restoreRecoveryState.entries, ['default-temp-workspace'], 'AionUi_v1_test.zip', 'win32');
-    await beginPendingRestoreRecoveryVerification();
 
     await fs.writeFile(configFilePath, 'restored-config');
     await fs.writeFile(path.join(managedDirPath, 'assistant.md'), 'restored-assistant');

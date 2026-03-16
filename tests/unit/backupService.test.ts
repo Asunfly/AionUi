@@ -26,6 +26,7 @@ const backupServiceMocks = vi.hoisted(() => ({
 const restoreRecoveryMocks = vi.hoisted(() => ({
   preparePendingRestoreRecovery: vi.fn(),
   confirmPendingRestoreRecovery: vi.fn(),
+  markPendingRestoreRecoveryForVerification: vi.fn(),
 }));
 
 const backupPathMocks = vi.hoisted(() => ({
@@ -148,6 +149,7 @@ describe('BackupService', () => {
     backupServiceMocks.dbBackup.mockResolvedValue(undefined);
     restoreRecoveryMocks.preparePendingRestoreRecovery.mockResolvedValue(undefined);
     restoreRecoveryMocks.confirmPendingRestoreRecovery.mockResolvedValue(undefined);
+    restoreRecoveryMocks.markPendingRestoreRecoveryForVerification.mockResolvedValue(undefined);
     backupPathMocks.getCurrentManagedBackupEntries.mockReturnValue([]);
     backupPathMocks.getManagedBackupEntries.mockReturnValue([]);
   });
@@ -179,6 +181,19 @@ describe('BackupService', () => {
     expect(backupServiceMocks.checkConnection).toHaveBeenCalledTimes(1);
     expect(backupServiceMocks.ensureDirectory).toHaveBeenCalledTimes(1);
     expect(backupServiceMocks.checkConnection.mock.invocationCallOrder[0]).toBeLessThan(backupServiceMocks.ensureDirectory.mock.invocationCallOrder[0]);
+  });
+
+  it('fails fast when the remote backup directory cannot be prepared before snapshotting', async () => {
+    const service = new BackupService();
+
+    backupServiceMocks.ensureDirectory.mockRejectedValueOnce(new Error('remote path unavailable'));
+
+    await expect(service.runRemoteBackup(settings, 'AionUi_v1_manual.zip', false, 'req-remote-path')).rejects.toMatchObject({
+      message: 'remote path unavailable',
+    });
+
+    expect(backupServiceMocks.dbBackup).not.toHaveBeenCalled();
+    expect(backupServiceMocks.uploadFile).not.toHaveBeenCalled();
   });
 
   it('lists only managed backup archives and sorts them by modified time descending', async () => {
@@ -524,6 +539,7 @@ describe('BackupService', () => {
       })
     );
     expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
+    expect(restoreRecoveryMocks.markPendingRestoreRecoveryForVerification).toHaveBeenCalledTimes(1);
     expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).not.toHaveBeenCalled();
   });
 

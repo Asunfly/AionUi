@@ -26,6 +26,7 @@ interface IPendingRestoreRecoveryState {
   snapshotDir: string;
   managedEntryKeys?: string[];
   relativeRoots: string[];
+  phase: 'restoring' | 'verify';
   startupAttempts: number;
   lastStartupAt?: string;
 }
@@ -162,6 +163,7 @@ async function readPendingRestoreRecoveryState(): Promise<IPendingRestoreRecover
       snapshotDir: parsed.snapshotDir,
       managedEntryKeys: Array.isArray(parsed.managedEntryKeys) ? parsed.managedEntryKeys.filter((item): item is string => typeof item === 'string') : undefined,
       relativeRoots: parsed.relativeRoots.filter((item): item is string => typeof item === 'string'),
+      phase: parsed.phase === 'verify' ? 'verify' : parsed.startupAttempts > 0 ? 'verify' : 'restoring',
       startupAttempts: parsed.startupAttempts,
       lastStartupAt: typeof parsed.lastStartupAt === 'string' ? parsed.lastStartupAt : undefined,
     };
@@ -215,6 +217,7 @@ export async function preparePendingRestoreRecovery(entries: IManagedBackupEntry
     snapshotDir,
     managedEntryKeys: entries.map((entry) => entry.key),
     relativeRoots,
+    phase: 'restoring',
     startupAttempts: 0,
   });
 }
@@ -223,10 +226,37 @@ export async function confirmPendingRestoreRecovery(): Promise<void> {
   await removeIfExists(getRestoreRecoveryRoot());
 }
 
+export async function markPendingRestoreRecoveryForVerification(): Promise<void> {
+  const state = await readPendingRestoreRecoveryState();
+  if (!state) {
+    return;
+  }
+
+  await writePendingRestoreRecoveryState({
+    ...state,
+    phase: 'verify',
+    startupAttempts: 0,
+    lastStartupAt: undefined,
+  });
+}
+
 export async function beginPendingRestoreRecoveryVerification(): Promise<TRestoreRecoveryStartupStatus> {
   const state = await readPendingRestoreRecoveryState();
   if (!state) {
     return 'none';
+  }
+
+  if (state.phase === 'restoring') {
+    console.warn(`[RestoreRecovery] Detected interrupted restore for ${state.fileName}, attempting automatic rollback`);
+    try {
+      await rollbackPendingRestoreRecovery(state);
+      await confirmPendingRestoreRecovery();
+      console.warn(`[RestoreRecovery] Automatic rollback completed for ${state.fileName}`);
+      return 'rolled_back';
+    } catch (error) {
+      console.error('[RestoreRecovery] Automatic rollback failed:', error);
+      return 'rollback_failed';
+    }
   }
 
   if (state.startupAttempts >= 1) {

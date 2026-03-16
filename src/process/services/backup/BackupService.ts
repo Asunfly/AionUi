@@ -22,7 +22,7 @@ import { copyDirectoryRecursively, ensureDirectory } from '@/process/utils';
 import type { IManagedBackupEntry } from './backupPaths';
 import { filterManagedBackupEntriesByKeys, getBackupPathContext, getCurrentManagedBackupEntries, getManagedBackupEntries } from './backupPaths';
 import { BackupTaskError, getBackupErrorCode, isAbortLikeError } from './BackupTaskError';
-import { confirmPendingRestoreRecovery, preparePendingRestoreRecovery } from './restoreRecovery';
+import { confirmPendingRestoreRecovery, markPendingRestoreRecoveryForVerification, preparePendingRestoreRecovery } from './restoreRecovery';
 import { CloudWebDavClient } from './WebDavClient';
 import { collectManagedWorkspaceRelativePaths, getManagedWorkspaceRelativePath, normalizeManagedWorkspaceRelativePath, remapConversationExtraPaths } from './workspaceBackup';
 
@@ -256,6 +256,7 @@ export class BackupService {
       try {
         this.emitTask({ task: 'backup', phase: 'connecting', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
         await client.checkConnection(signal);
+        await client.ensureDirectory(signal);
         this.assertNotCanceled(signal);
 
         this.emitTask({ task: 'backup', phase: 'snapshotting', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
@@ -395,6 +396,9 @@ export class BackupService {
         }
 
         getDatabase();
+        if (pendingRecoveryPrepared) {
+          await markPendingRestoreRecoveryForVerification();
+        }
         this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName, requestId: finalRequestId, cancellable: false });
         return { fileName, restartRequired: true, manifest };
       } catch (error) {
