@@ -83,12 +83,22 @@ describe('CloudWebDavClient', () => {
     await expect(client.checkConnection()).rejects.toMatchObject({ code: 'invalid_url' });
   });
 
-  it('tolerates 405 responses when the remote folder cannot be created explicitly', async () => {
+  it('re-checks the remote folder after a tolerated create conflict', async () => {
     const client = new CloudWebDavClient(config);
     webDavMocks.getDirectoryContents.mockRejectedValueOnce({ status: 404 });
     webDavMocks.createDirectory.mockRejectedValueOnce({ status: 405 });
+    webDavMocks.getDirectoryContents.mockResolvedValueOnce([]);
 
     await expect(client.ensureDirectory()).resolves.toBeUndefined();
+  });
+
+  it('surfaces a remote path error when a tolerated create conflict still leaves the folder unavailable', async () => {
+    const client = new CloudWebDavClient(config);
+    webDavMocks.getDirectoryContents.mockRejectedValueOnce({ status: 404 });
+    webDavMocks.createDirectory.mockRejectedValueOnce({ status: 409 });
+    webDavMocks.getDirectoryContents.mockRejectedValueOnce({ status: 404 });
+
+    await expect(client.ensureDirectory()).rejects.toMatchObject({ code: 'remote_path_error' });
   });
 
   it('ignores 404 when deleting an already-missing remote backup file', async () => {

@@ -242,6 +242,34 @@ describe('BackupService', () => {
     ]);
   });
 
+  it('preserves the freshly uploaded backup when retention timestamps tie', async () => {
+    const service = new BackupService();
+    const retentionSettings = {
+      ...settings,
+      maxBackupCount: 1,
+    };
+
+    backupServiceMocks.listFiles.mockResolvedValue([
+      {
+        type: 'file',
+        basename: 'AionUi_v1.8.23_20260307-154530_OLD001_win32-x64_OFFICE-PC.zip',
+        lastmod: '2026-03-07T15:45:30.000Z',
+        size: 2048,
+      },
+      {
+        type: 'file',
+        basename: 'AionUi_v1.8.23_20260307-154530_NEW001_win32-x64_OFFICE-PC.zip',
+        lastmod: '2026-03-07T15:45:30.000Z',
+        size: 2048,
+      },
+    ]);
+
+    await service.runRemoteBackup(retentionSettings, 'AionUi_v1.8.23_20260307-154530_NEW001_win32-x64_OFFICE-PC.zip', false, 'req-retention');
+
+    expect(backupServiceMocks.deleteFile).toHaveBeenCalledWith('AionUi_v1.8.23_20260307-154530_OLD001_win32-x64_OFFICE-PC.zip', expect.anything());
+    expect(backupServiceMocks.deleteFile.mock.calls.map(([fileName]) => fileName)).not.toContain('AionUi_v1.8.23_20260307-154530_NEW001_win32-x64_OFFICE-PC.zip');
+  });
+
   it('collects default workspace directories referenced only by legacy chat history', async () => {
     const service = new BackupService();
     const tempRoot = path.join(process.cwd(), '.tmp-vitest', `backup-legacy-${Date.now()}`);
@@ -778,7 +806,7 @@ describe('BackupService', () => {
       notifyCleanupStarted = resolve;
     });
     const cleanupRemoteBackups = vi.fn().mockImplementation(
-      (_client: unknown, _maxBackupCount: number, signal?: AbortSignal) =>
+      (_client: unknown, _maxBackupCount: number, _preservedFileName?: string, signal?: AbortSignal) =>
         new Promise<void>((_, reject) => {
           notifyCleanupStarted?.();
           signal?.addEventListener('abort', () => {

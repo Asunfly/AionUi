@@ -277,7 +277,7 @@ export class BackupService {
         await client.uploadFile(finalFileName, zipBuffer, signal);
         remoteFileUploaded = true;
         this.assertNotCanceled(signal);
-        await this.cleanupRemoteBackups(client, settings.maxBackupCount, signal);
+        await this.cleanupRemoteBackups(client, settings.maxBackupCount, finalFileName, signal);
 
         const result = {
           fileName: finalFileName,
@@ -565,13 +565,31 @@ export class BackupService {
     return buffer;
   }
 
-  private async cleanupRemoteBackups(client: CloudWebDavClient, maxBackupCount: number, signal?: AbortSignal): Promise<void> {
+  private async cleanupRemoteBackups(client: CloudWebDavClient, maxBackupCount: number, preservedFileName?: string, signal?: AbortSignal): Promise<void> {
     if (maxBackupCount <= 0) {
       return;
     }
 
     const files = await client.listFiles(signal);
-    const managedFiles = files.filter((file) => file.type === 'file' && MANAGED_CLOUD_BACKUP_FILE_PATTERN.test(file.basename)).sort((a, b) => new Date(b.lastmod).getTime() - new Date(a.lastmod).getTime());
+    const managedFiles = files
+      .filter((file) => file.type === 'file' && MANAGED_CLOUD_BACKUP_FILE_PATTERN.test(file.basename))
+      .sort((a, b) => {
+        if (preservedFileName) {
+          if (a.basename === preservedFileName && b.basename !== preservedFileName) {
+            return -1;
+          }
+          if (b.basename === preservedFileName && a.basename !== preservedFileName) {
+            return 1;
+          }
+        }
+
+        const timeDifference = new Date(b.lastmod).getTime() - new Date(a.lastmod).getTime();
+        if (timeDifference !== 0) {
+          return timeDifference;
+        }
+
+        return a.basename.localeCompare(b.basename);
+      });
 
     const redundantFiles = managedFiles.slice(maxBackupCount);
     for (const file of redundantFiles) {

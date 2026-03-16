@@ -76,6 +76,7 @@ export class CloudWebDavClient {
       }
     }
 
+    let requiresVerification = false;
     try {
       await this.client.createDirectory(this.remotePath, { recursive: true, signal });
     } catch (error) {
@@ -85,6 +86,21 @@ export class CloudWebDavClient {
       if (!this.isStatus(error, 405, 409)) {
         throw this.mapError(error, 'remote-path');
       }
+
+      requiresVerification = true;
+    }
+
+    if (!requiresVerification) {
+      return;
+    }
+
+    try {
+      await this.client.getDirectoryContents(this.remotePath, { signal });
+    } catch (error) {
+      if (this.isStatus(error, 401, 403)) {
+        throw this.mapError(error, 'connection');
+      }
+      throw this.mapError(error, 'remote-path');
     }
   }
 
