@@ -174,8 +174,18 @@ async function readPendingRestoreRecoveryState(): Promise<IPendingRestoreRecover
 }
 
 async function writePendingRestoreRecoveryState(state: IPendingRestoreRecoveryState): Promise<void> {
-  ensureDirectory(getRestoreRecoveryRoot());
-  await fs.writeFile(getRestoreRecoveryStatePath(), JSON.stringify(state, null, 2));
+  const recoveryRoot = getRestoreRecoveryRoot();
+  const statePath = getRestoreRecoveryStatePath();
+  const tempStatePath = path.join(recoveryRoot, `${RESTORE_RECOVERY_STATE_FILE}.${process.pid}.${Date.now()}.tmp`);
+
+  ensureDirectory(recoveryRoot);
+  try {
+    await fs.writeFile(tempStatePath, JSON.stringify(state, null, 2), 'utf-8');
+    await fs.rename(tempStatePath, statePath);
+  } catch (error) {
+    await removeIfExists(tempStatePath).catch((): void => undefined);
+    throw error;
+  }
 }
 
 async function rollbackPendingRestoreRecovery(state: IPendingRestoreRecoveryState): Promise<void> {

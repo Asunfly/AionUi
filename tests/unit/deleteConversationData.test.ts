@@ -194,4 +194,40 @@ describe('deleteConversationData', () => {
     expect(deleteMocks.deleteLegacyConversationStorage).toHaveBeenCalledWith('legacy-only');
     expect(deleteMocks.movePathToTrash).toHaveBeenCalledWith(path.join('/tmp/aionui-work', 'gemini-temp-legacy'));
   });
+
+  it('re-evaluates shared default workspace references after each conversation delete', async () => {
+    const workspacePath = '/tmp/aionui-work/shared-temp-workspace';
+    const remainingConversationIds = new Set(['conv-1', 'conv-2']);
+    const buildConversation = (id: string) => ({
+      id,
+      extra: {
+        workspace: workspacePath,
+        customWorkspace: false,
+      },
+    });
+
+    deleteMocks.getConversation.mockImplementation((conversationId: string) => ({
+      success: remainingConversationIds.has(conversationId),
+      data: remainingConversationIds.has(conversationId) ? buildConversation(conversationId) : null,
+    }));
+    deleteMocks.getUserConversations.mockImplementation(() => ({
+      data: Array.from(remainingConversationIds).map((conversationId) => buildConversation(conversationId)),
+      hasMore: false,
+    }));
+    deleteMocks.deleteConversation.mockImplementation((conversationId: string) => {
+      remainingConversationIds.delete(conversationId);
+      return {
+        success: true,
+        data: true,
+      };
+    });
+
+    const { deleteConversationData } = await import('../../src/process/services/conversation/deleteConversationData');
+    const [firstDeleted, secondDeleted] = await Promise.all([deleteConversationData('conv-1'), deleteConversationData('conv-2')]);
+
+    expect(firstDeleted).toBe(true);
+    expect(secondDeleted).toBe(true);
+    expect(deleteMocks.movePathToTrash).toHaveBeenCalled();
+    expect(deleteMocks.movePathToTrash.mock.calls.map(([workspace]) => workspace)).toContain(path.join('/tmp/aionui-work', 'shared-temp-workspace'));
+  });
 });

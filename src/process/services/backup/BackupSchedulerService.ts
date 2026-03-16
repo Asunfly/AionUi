@@ -61,9 +61,13 @@ export class BackupSchedulerService {
 
     this.scheduleTimer = setTimeout(
       () => {
-        void this.performAutomaticBackup().finally(() => {
-          void this.scheduleNextRun();
-        });
+        void this.performAutomaticBackup()
+          .catch((error) => {
+            console.warn('[BackupSchedulerService] Automatic backup failed:', error);
+          })
+          .finally(() => {
+            void this.scheduleNextRun();
+          });
       },
       settings.autoBackupIntervalHours * 60 * 60 * 1000
     );

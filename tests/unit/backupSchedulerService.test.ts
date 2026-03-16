@@ -108,4 +108,44 @@ describe('BackupSchedulerService', () => {
     expect(schedulerMocks.setConfig).not.toHaveBeenCalled();
     expect(schedulerMocks.runRemoteBackup).not.toHaveBeenCalled();
   });
+
+  it('catches automatic backup failures and continues scheduling future runs', async () => {
+    const settings = {
+      activeProvider: 'webdav' as const,
+      webdav: {
+        host: 'https://example.com/dav',
+        username: 'demo',
+        password: 'secret',
+        remotePath: '/AionUibackup',
+      },
+      nutstore: {
+        username: '',
+        password: '',
+        remotePath: '/AionUibackup',
+      },
+      includeDefaultWorkspaceFiles: false,
+      autoBackupEnabled: true,
+      autoBackupIntervalHours: 1,
+      maxBackupCount: 5,
+      lastBackupStatus: 'idle' as const,
+    };
+
+    schedulerMocks.getConfig.mockResolvedValue(settings);
+    schedulerMocks.runRemoteBackup.mockRejectedValueOnce(new Error('network failed')).mockResolvedValueOnce(undefined);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    vi.resetModules();
+    const { BackupSchedulerService } = await import('../../src/process/services/backup/BackupSchedulerService');
+    const service = new BackupSchedulerService();
+
+    await service.start();
+
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+    expect(schedulerMocks.runRemoteBackup).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledWith('[BackupSchedulerService] Automatic backup failed:', expect.any(Error));
+
+    warnSpy.mockRestore();
+  });
 });

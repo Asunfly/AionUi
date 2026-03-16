@@ -42,7 +42,7 @@ async function getAllDatabaseConversations(): Promise<TChatConversation[]> {
   return conversations;
 }
 
-async function getWorkspaceToDelete(conversationId: string, conversation: TChatConversation | undefined): Promise<string | null> {
+function getManagedWorkspacePath(conversation: TChatConversation | undefined): string | null {
   const workspace = getConversationWorkspace(conversation);
   const customWorkspace = typeof conversation?.extra?.customWorkspace === 'boolean' ? conversation.extra.customWorkspace : undefined;
   const workDir = getSystemDir().workDir;
@@ -56,7 +56,14 @@ async function getWorkspaceToDelete(conversationId: string, conversation: TChatC
     return null;
   }
 
-  const candidateWorkspacePath = path.join(workDir, ...relativeRoot.split('/').filter(Boolean));
+  return path.join(workDir, ...relativeRoot.split('/').filter(Boolean));
+}
+
+async function getWorkspaceToDelete(conversationId: string, candidateWorkspacePath: string | null): Promise<string | null> {
+  if (!candidateWorkspacePath) {
+    return null;
+  }
+
   const normalizedCandidatePath = normalizeWorkspacePath(candidateWorkspacePath);
   const [dbConversations, legacyConversations] = await Promise.all([getAllDatabaseConversations(), getLegacyConversations()]);
 
@@ -100,7 +107,7 @@ export async function deleteConversationData(conversationId: string): Promise<bo
     return false;
   }
 
-  const workspaceToDelete = await getWorkspaceToDelete(conversationId, conversation || undefined);
+  const candidateWorkspacePath = getManagedWorkspacePath(conversation || undefined);
   if (databaseConversation) {
     const deleteResult = db.deleteConversation(conversationId);
     if (!deleteResult.success) {
@@ -112,6 +119,7 @@ export async function deleteConversationData(conversationId: string): Promise<bo
     console.warn('[deleteConversationData] Failed to cleanup legacy conversation storage:', error);
   });
 
+  const workspaceToDelete = await getWorkspaceToDelete(conversationId, candidateWorkspacePath);
   if (workspaceToDelete) {
     await movePathToTrash(workspaceToDelete).catch((error) => {
       console.warn('[deleteConversationData] Failed to move default workspace to trash:', error);
