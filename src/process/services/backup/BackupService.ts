@@ -248,6 +248,7 @@ export class BackupService {
       const finalRequestId = requestId || `backup-${Date.now()}-${randomToken(4)}`;
       const abortController = new AbortController();
       const { signal } = abortController;
+      let remoteFileUploaded = false;
 
       this.currentAbortController = abortController;
       this.currentRequestId = finalRequestId;
@@ -273,6 +274,7 @@ export class BackupService {
 
         this.emitTask({ task: 'backup', phase: 'uploading', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
         await client.uploadFile(finalFileName, zipBuffer, signal);
+        remoteFileUploaded = true;
         this.assertNotCanceled(signal);
         await this.cleanupRemoteBackups(client, settings.maxBackupCount, signal);
 
@@ -285,7 +287,7 @@ export class BackupService {
         return result;
       } catch (error) {
         const normalizedError = this.normalizeTaskError(error);
-        if (normalizedError.code === 'backup_canceled') {
+        if (normalizedError.code === 'backup_canceled' && remoteFileUploaded) {
           await client.deleteFile(finalFileName).catch((): void => undefined);
         }
 

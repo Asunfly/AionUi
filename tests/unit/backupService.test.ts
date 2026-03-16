@@ -722,6 +722,7 @@ describe('BackupService', () => {
     expect(service.cancelTask('req-manual')).toBe(true);
 
     await expect(taskPromise).rejects.toMatchObject({ code: 'backup_canceled' });
+    expect(backupServiceMocks.deleteFile).not.toHaveBeenCalled();
     expect(backupServiceMocks.emit).toHaveBeenCalledWith(
       expect.objectContaining({
         phase: 'error',
@@ -729,5 +730,56 @@ describe('BackupService', () => {
         requestId: 'req-manual',
       })
     );
+  });
+
+  it('does not delete an existing remote backup when cancellation happens before upload starts', async () => {
+    const service = new BackupService();
+
+    backupServiceMocks.checkConnection.mockImplementation(
+      (signal?: AbortSignal) =>
+        new Promise<boolean>((_, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+          });
+        })
+    );
+
+    const taskPromise = service.runRemoteBackup(settings, 'AionUi_v1_manual.zip', false, 'req-early-cancel');
+    await Promise.resolve();
+
+    expect(service.cancelTask('req-early-cancel')).toBe(true);
+
+    await expect(taskPromise).rejects.toMatchObject({ code: 'backup_canceled' });
+    expect(backupServiceMocks.deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('deletes the just-uploaded remote backup when cancellation happens after upload completes', async () => {
+    const service = new BackupService();
+
+    backupServiceMocks.uploadFile.mockImplementation(async () => undefined);
+    let notifyCleanupStarted: (() => void) | null = null;
+    const cleanupStarted = new Promise<void>((resolve) => {
+      notifyCleanupStarted = resolve;
+    });
+    const cleanupRemoteBackups = vi.fn().mockImplementation(
+      (_client: unknown, _maxBackupCount: number, signal?: AbortSignal) =>
+        new Promise<void>((_, reject) => {
+          notifyCleanupStarted?.();
+          signal?.addEventListener('abort', () => {
+            reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+          });
+        })
+    );
+    Object.assign(service as unknown as Record<string, unknown>, {
+      cleanupRemoteBackups,
+    });
+
+    const taskPromise = service.runRemoteBackup(settings, 'AionUi_v1_uploaded.zip', false, 'req-post-upload-cancel');
+    await cleanupStarted;
+
+    expect(service.cancelTask('req-post-upload-cancel')).toBe(true);
+
+    await expect(taskPromise).rejects.toMatchObject({ code: 'backup_canceled' });
+    expect(backupServiceMocks.deleteFile).toHaveBeenCalledWith('AionUi_v1_uploaded.zip');
   });
 });

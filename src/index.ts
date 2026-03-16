@@ -684,6 +684,7 @@ const handleAppReady = async (): Promise<void> => {
       const { resetPasswordCLI } = await import('./utils/resetPasswordCLI');
       await resetPasswordCLI(username);
 
+      confirmRestoreRecoveryIfNeeded();
       app.quit();
     } catch (error) {
       app.exit(1);
