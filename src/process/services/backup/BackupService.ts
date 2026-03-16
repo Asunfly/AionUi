@@ -221,6 +221,7 @@ export class BackupService {
     this.assertSettings(settings);
     const client = new CloudWebDavClient(normalizeCloudBackupConfig(settings));
     await client.checkConnection();
+    await client.ensureDirectory();
     return { reachable: true };
   }
 
@@ -707,11 +708,16 @@ export class BackupService {
     const context = getBackupPathContext();
     const db = getDatabase();
     const conversations = this.getAllConversations(db);
+    const legacyConversations = await this.getLegacyConversations(context.cacheDir);
     const sessionResult = db.getChannelSessions();
     const sessionWorkspaces = sessionResult.success ? sessionResult.data || [] : [];
     const relativeRoots = collectManagedWorkspaceRelativePaths(
       [
         ...conversations.map((conversation) => ({
+          workspace: conversation.extra?.workspace,
+          customWorkspace: conversation.extra?.customWorkspace,
+        })),
+        ...legacyConversations.map((conversation) => ({
           workspace: conversation.extra?.workspace,
           customWorkspace: conversation.extra?.customWorkspace,
         })),
@@ -740,6 +746,25 @@ export class BackupService {
     );
 
     return workspaceDirectories.filter((item): item is IManagedWorkspaceDirectory => item !== null);
+  }
+
+  private async getLegacyConversations(cacheDir: string): Promise<TChatConversation[]> {
+    const chatFilePath = path.join(cacheDir, 'aionui-chat.txt');
+    if (!(await exists(chatFilePath))) {
+      return [];
+    }
+
+    const rawContent = (await fs.readFile(chatFilePath, 'utf-8')).trim();
+    if (!rawContent) {
+      return [];
+    }
+
+    try {
+      const parsed = decodeLegacyStorageJson<IChatConversationRefer>(rawContent);
+      return Array.isArray(parsed['chat.history']) ? parsed['chat.history'] : [];
+    } catch {
+      return [];
+    }
   }
 
   private getAllConversations(db: ReturnType<typeof getDatabase>): TChatConversation[] {

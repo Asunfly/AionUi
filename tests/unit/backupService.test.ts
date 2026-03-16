@@ -16,6 +16,7 @@ const backupServiceMocks = vi.hoisted(() => ({
   listFiles: vi.fn(),
   downloadFile: vi.fn(),
   checkConnection: vi.fn(),
+  ensureDirectory: vi.fn(),
   uploadFile: vi.fn(),
   deleteFile: vi.fn(),
   dbBackup: vi.fn(),
@@ -101,6 +102,7 @@ vi.mock('../../src/process/services/backup/restoreRecovery', () => restoreRecove
 vi.mock('../../src/process/services/backup/WebDavClient', () => ({
   CloudWebDavClient: class {
     checkConnection = backupServiceMocks.checkConnection;
+    ensureDirectory = backupServiceMocks.ensureDirectory;
     listFiles = backupServiceMocks.listFiles;
     downloadFile = backupServiceMocks.downloadFile;
     uploadFile = backupServiceMocks.uploadFile;
@@ -109,6 +111,10 @@ vi.mock('../../src/process/services/backup/WebDavClient', () => ({
 }));
 
 import { BackupService } from '../../src/process/services/backup/BackupService';
+
+function encodeLegacyStorageJson(data: unknown): string {
+  return Buffer.from(encodeURIComponent(JSON.stringify(data)), 'utf-8').toString('base64');
+}
 
 describe('BackupService', () => {
   const settings = {
@@ -134,6 +140,7 @@ describe('BackupService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     backupServiceMocks.checkConnection.mockResolvedValue(true);
+    backupServiceMocks.ensureDirectory.mockResolvedValue(undefined);
     backupServiceMocks.listFiles.mockResolvedValue([]);
     backupServiceMocks.downloadFile.mockReset();
     backupServiceMocks.uploadFile.mockResolvedValue(undefined);
@@ -162,6 +169,16 @@ describe('BackupService', () => {
     expect(fileName).toMatch(new RegExp(`^AionUi_v1\\.8\\.23_\\d{8}-\\d{6}_[A-Z0-9]{6}_${process.platform}-${process.arch}_OFFICE-PC_nightly-build\\.zip$`));
 
     hostnameSpy.mockRestore();
+  });
+
+  it('validates the configured remote directory when checking the cloud backup connection', async () => {
+    const service = new BackupService();
+
+    await expect(service.checkRemoteConnection(settings)).resolves.toEqual({ reachable: true });
+
+    expect(backupServiceMocks.checkConnection).toHaveBeenCalledTimes(1);
+    expect(backupServiceMocks.ensureDirectory).toHaveBeenCalledTimes(1);
+    expect(backupServiceMocks.checkConnection.mock.invocationCallOrder[0]).toBeLessThan(backupServiceMocks.ensureDirectory.mock.invocationCallOrder[0]);
   });
 
   it('lists only managed backup archives and sorts them by modified time descending', async () => {
@@ -208,6 +225,64 @@ describe('BackupService', () => {
         size: 1024,
       },
     ]);
+  });
+
+  it('collects default workspace directories referenced only by legacy chat history', async () => {
+    const service = new BackupService();
+    const tempRoot = path.join(process.cwd(), '.tmp-vitest', `backup-legacy-${Date.now()}`);
+    const context = {
+      cacheDir: path.join(tempRoot, 'cache'),
+      workDir: path.join(tempRoot, 'work'),
+      dataDir: path.join(tempRoot, 'data'),
+    };
+    const dbWorkspacePath = path.join(context.workDir, 'db-workspace');
+    const legacyWorkspacePath = path.join(context.workDir, 'legacy-workspace');
+
+    backupPathMocks.getBackupPathContext.mockReturnValueOnce(context);
+    backupServiceMocks.getDatabase.mockImplementationOnce(() => ({
+      backup: backupServiceMocks.dbBackup,
+      getUserConversations: vi.fn(() => ({
+        data: [{ extra: { workspace: dbWorkspacePath } }],
+        total: 1,
+        page: 0,
+        pageSize: 1000,
+        hasMore: false,
+      })),
+      getChannelSessions: vi.fn(() => ({
+        success: true,
+        data: [],
+      })),
+    }));
+
+    await fs.promises.mkdir(context.cacheDir, { recursive: true });
+    await fs.promises.mkdir(dbWorkspacePath, { recursive: true });
+    await fs.promises.mkdir(legacyWorkspacePath, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(context.cacheDir, 'aionui-chat.txt'),
+      encodeLegacyStorageJson({
+        'chat.history': [
+          {
+            id: 'legacy-only',
+            extra: {
+              workspace: legacyWorkspacePath,
+            },
+          },
+        ],
+      }),
+      'utf-8'
+    );
+
+    try {
+      const workspaceDirectories = await (
+        service as unknown as {
+          collectDefaultWorkspaceDirectories: () => Promise<Array<{ relativePath: string }>>;
+        }
+      ).collectDefaultWorkspaceDirectories();
+
+      expect(workspaceDirectories.map((item) => item.relativePath)).toEqual(['db-workspace', 'legacy-workspace']);
+    } finally {
+      await fs.promises.rm(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('blocks restore when the backup database version is newer than the current application schema', async () => {
