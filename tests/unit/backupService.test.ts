@@ -674,6 +674,61 @@ describe('BackupService', () => {
     expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).toHaveBeenCalled();
   });
 
+  it('rolls back restored data when reopening the database fails after replacement', async () => {
+    const service = new BackupService();
+    const zip = new JSZip();
+    const manifest = {
+      backupSchemaVersion: 1,
+      appVersion: '1.8.23',
+      dbVersion: CURRENT_DB_VERSION,
+      createdAt: '2026-03-07T15:45:30.000Z',
+      providerType: 'webdav' as const,
+      sourcePlatform: 'linux',
+      sourceArch: 'x64',
+      sourceHostname: 'OFFICE-PC',
+      includedSections: ['database'],
+      defaultWorkspaceFiles: {
+        included: false,
+        relativeRoots: [] as string[],
+      },
+      sourceSystemDirs: {
+        cacheDir: 'cache',
+        workDir: 'work',
+        dataDir: 'data',
+        configDir: 'config',
+      },
+      fileName: 'AionUi_v1_test.zip',
+    };
+    zip.file('manifest.json', JSON.stringify(manifest));
+    zip.file('payload/db/aionui.db', 'sqlite');
+    backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
+    backupServiceMocks.getDatabase.mockImplementationOnce(() => {
+      throw new Error('reopen failed');
+    });
+
+    const createRollbackSnapshot = vi.fn().mockResolvedValue(undefined);
+    const createWorkspaceRollbackSnapshot = vi.fn().mockResolvedValue(undefined);
+    const replaceManagedData = vi.fn().mockResolvedValue(undefined);
+    const replaceDefaultWorkspaceDirectories = vi.fn().mockResolvedValue(undefined);
+    const rewriteManagedWorkspacePaths = vi.fn().mockResolvedValue(undefined);
+    Object.assign(service as unknown as Record<string, unknown>, {
+      createRollbackSnapshot,
+      createWorkspaceRollbackSnapshot,
+      replaceManagedData,
+      replaceDefaultWorkspaceDirectories,
+      rewriteManagedWorkspacePaths,
+    });
+
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req')).rejects.toThrow('reopen failed');
+
+    expect(replaceManagedData).toHaveBeenNthCalledWith(1, [], expect.stringContaining('staging'));
+    expect(replaceManagedData).toHaveBeenNthCalledWith(2, [], expect.stringContaining('rollback'));
+    expect(replaceDefaultWorkspaceDirectories).toHaveBeenNthCalledWith(1, [], expect.stringContaining('staging'));
+    expect(replaceDefaultWorkspaceDirectories).toHaveBeenNthCalledWith(2, [], expect.stringContaining('rollback'));
+    expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).toHaveBeenCalled();
+    expect(restoreRecoveryMocks.markPendingRestoreRecoveryForVerification).not.toHaveBeenCalled();
+  });
+
   it('rejects restore packages that declare a managed entry without its payload', async () => {
     const service = new BackupService();
     backupPathMocks.getCurrentManagedBackupEntries.mockReturnValue([

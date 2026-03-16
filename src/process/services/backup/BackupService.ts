@@ -386,6 +386,10 @@ export class BackupService {
           await this.replaceManagedData(restoreEntries, stagingDir);
           await this.replaceDefaultWorkspaceDirectories(manifest.defaultWorkspaceFiles.relativeRoots, stagingDir);
           await this.rewriteManagedWorkspacePaths(manifest);
+          getDatabase();
+          if (pendingRecoveryPrepared) {
+            await markPendingRestoreRecoveryForVerification();
+          }
         } catch (restoreError) {
           await this.replaceManagedData(restoreEntries, rollbackDir);
           await this.replaceDefaultWorkspaceDirectories(manifest.defaultWorkspaceFiles.relativeRoots, rollbackDir);
@@ -393,11 +397,6 @@ export class BackupService {
             await confirmPendingRestoreRecovery().catch((): void => undefined);
           }
           throw restoreError;
-        }
-
-        getDatabase();
-        if (pendingRecoveryPrepared) {
-          await markPendingRestoreRecoveryForVerification();
         }
         this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName, requestId: finalRequestId, cancellable: false });
         return { fileName, restartRequired: true, manifest };
