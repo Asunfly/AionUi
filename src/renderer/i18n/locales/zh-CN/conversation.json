@@ -16,7 +16,10 @@
     "none": "无",
     "quickActionsTitle": "AionUi 能做什么？",
     "quickActionFeedback": "想吐槽或提建议?",
-    "quickActionStar": "喜欢我们？点个星吧"
+    "quickActionStar": "喜欢我们？点个星吧",
+    "skillsMarket": "AionUi Skills Market",
+    "skillsMarketDesc": "按需搜索并调用社区 Skills，一次配置，所有Agent通用。",
+    "skillsMarketDetails": "详情 >>"
   },
   "history": {
     "today": "今天",
@@ -143,6 +146,13 @@
       "openFailed": "打开失败",
       "revealFailed": "无法打开所在目录"
     }
+  },
+  "minimap": {
+    "searchAria": "搜索会话",
+    "searchHint": "点击这里搜索关键词",
+    "empty": "暂无问答内容",
+    "noMatch": "未找到匹配内容",
+    "count": "{{count}} 条"
   },
   "chat": {
     "noModelSelected": "当前会话未选择模型，无法发送消息",
