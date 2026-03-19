@@ -63,8 +63,8 @@ const mockModules = () => {
     default: { t: vi.fn((key: string) => key) },
   }));
 
-  vi.doMock('@process/WorkerManage', () => ({
-    default: { listTasks: mockListTasks },
+  vi.doMock('@process/task/workerTaskManagerSingleton', () => ({
+    workerTaskManager: { listTasks: mockListTasks },
   }));
 
   vi.doMock('@process/database', () => ({
@@ -83,7 +83,7 @@ describe('tray module', () => {
     vi.doUnmock('electron');
     vi.doUnmock('@/common');
     vi.doUnmock('@process/i18n');
-    vi.doUnmock('@process/WorkerManage');
+    vi.doUnmock('@process/task/workerTaskManagerSingleton');
     vi.doUnmock('@process/database');
   });
 
@@ -194,28 +194,26 @@ describe('tray module', () => {
 
   describe('refreshTrayMenu', () => {
     it('should rebuild context menu when tray exists', async () => {
-      const { Menu } = await import('electron');
       const { createOrUpdateTray, refreshTrayMenu } = await import('@/process/tray');
 
       createOrUpdateTray();
       // Wait for initial async menu build to complete
       await new Promise((r) => setTimeout(r, 50));
       mockTrayInstance.setContextMenu.mockClear();
-      (Menu.buildFromTemplate as ReturnType<typeof vi.fn>).mockClear();
+      mockBuildFromTemplate.mockClear();
 
       await refreshTrayMenu();
 
-      expect(Menu.buildFromTemplate).toHaveBeenCalledOnce();
+      expect(mockBuildFromTemplate).toHaveBeenCalledOnce();
       expect(mockTrayInstance.setContextMenu).toHaveBeenCalledWith(mockMenuInstance);
     });
 
     it('should be a no-op when no tray exists', async () => {
-      const { Menu } = await import('electron');
       const { refreshTrayMenu } = await import('@/process/tray');
 
       await refreshTrayMenu();
 
-      expect(Menu.buildFromTemplate).not.toHaveBeenCalled();
+      expect(mockBuildFromTemplate).not.toHaveBeenCalled();
     });
   });
 
@@ -269,7 +267,7 @@ describe('tray module', () => {
 
     it('should show running tasks count', async () => {
       setupWithOverrides();
-      mockListTasks.mockReturnValue([{ id: '1' }, { id: '2' }, { id: '3' }]);
+      mockListTasks.mockReturnValue([{ id: '1' }, { id: '2' }, { id: '3' }] as never[]);
 
       const templateArg = await getTemplateFromRefresh();
       const taskItem = templateArg.find((item: any) => item.label?.includes('3'));
