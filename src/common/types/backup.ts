@@ -14,9 +14,32 @@ export const AUTO_BACKUP_INTERVAL_OPTIONS = [0, 1, 6, 12, 24] as const;
 
 export type TBackupProvider = 'webdav' | 'nutstore';
 export type TBackupTaskKind = 'backup' | 'restore' | 'list';
-export type TBackupTaskPhase = 'idle' | 'preparing' | 'connecting' | 'snapshotting' | 'collecting' | 'packaging' | 'uploading' | 'listing' | 'downloading' | 'validating' | 'restoring' | 'success' | 'error';
+export type TBackupTaskPhase =
+  | 'idle'
+  | 'preparing'
+  | 'connecting'
+  | 'snapshotting'
+  | 'collecting'
+  | 'packaging'
+  | 'uploading'
+  | 'listing'
+  | 'downloading'
+  | 'validating'
+  | 'restoring'
+  | 'success'
+  | 'error';
 export type TAutoBackupIntervalHours = (typeof AUTO_BACKUP_INTERVAL_OPTIONS)[number];
-export type TBackupErrorCode = 'invalid_url' | 'auth_failed' | 'invalid_endpoint' | 'network_error' | 'remote_path_error' | 'backup_canceled' | 'task_conflict' | 'unsupported_file' | 'package_invalid' | 'unknown';
+export type TBackupErrorCode =
+  | 'invalid_url'
+  | 'auth_failed'
+  | 'invalid_endpoint'
+  | 'network_error'
+  | 'remote_path_error'
+  | 'backup_canceled'
+  | 'task_conflict'
+  | 'unsupported_file'
+  | 'package_invalid'
+  | 'unknown';
 
 export interface IWebDavBackupConfig {
   host: string;

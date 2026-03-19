@@ -18,7 +18,19 @@ const systemMocks = vi.hoisted(() => ({
     arch: 'x64',
   }),
   getCloseToTray: vi.fn().mockResolvedValue(false),
+  getNotificationEnabled: vi.fn().mockResolvedValue(true),
+  getCronNotificationEnabled: vi.fn().mockResolvedValue(false),
   setCloseToTray: vi.fn().mockResolvedValue(undefined),
+  setNotificationEnabled: vi.fn().mockResolvedValue(undefined),
+  setCronNotificationEnabled: vi.fn().mockResolvedValue(undefined),
+  isDevToolsOpened: vi.fn().mockResolvedValue(false),
+  openDevTools: vi.fn().mockResolvedValue(false),
+  getCdpStatus: vi
+    .fn()
+    .mockResolvedValue({ data: { enabled: false, startupEnabled: false, port: null, isDevMode: false } }),
+  updateCdpConfig: vi.fn().mockResolvedValue({ success: true }),
+  devToolsStateChangedOn: vi.fn(() => vi.fn()),
+  languageChangedOn: vi.fn(() => vi.fn()),
   dialogOpen: vi.fn(),
 }));
 
@@ -68,13 +80,43 @@ vi.mock('@/common', () => ({
       restart: {
         invoke: vi.fn(),
       },
+      isDevToolsOpened: {
+        invoke: systemMocks.isDevToolsOpened,
+      },
+      openDevTools: {
+        invoke: systemMocks.openDevTools,
+      },
+      getCdpStatus: {
+        invoke: systemMocks.getCdpStatus,
+      },
+      updateCdpConfig: {
+        invoke: systemMocks.updateCdpConfig,
+      },
+      devToolsStateChanged: {
+        on: systemMocks.devToolsStateChangedOn,
+      },
     },
     systemSettings: {
       getCloseToTray: {
         invoke: systemMocks.getCloseToTray,
       },
+      getNotificationEnabled: {
+        invoke: systemMocks.getNotificationEnabled,
+      },
+      getCronNotificationEnabled: {
+        invoke: systemMocks.getCronNotificationEnabled,
+      },
       setCloseToTray: {
         invoke: systemMocks.setCloseToTray,
+      },
+      setNotificationEnabled: {
+        invoke: systemMocks.setNotificationEnabled,
+      },
+      setCronNotificationEnabled: {
+        invoke: systemMocks.setCronNotificationEnabled,
+      },
+      languageChanged: {
+        on: systemMocks.languageChangedOn,
       },
     },
     dialog: {
@@ -110,7 +152,7 @@ vi.mock('../../src/renderer/utils/platform', () => ({
   isElectronDesktop: () => true,
 }));
 
-vi.mock('../../src/renderer/components/LanguageSwitcher', () => ({
+vi.mock('../../src/renderer/components/settings/LanguageSwitcher', () => ({
   default: () => <div>LanguageSwitcher</div>,
 }));
 
@@ -118,15 +160,19 @@ vi.mock('../../src/renderer/components/base/AionScrollArea', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('../../src/renderer/components/SettingsModal/contents/CloudBackupRemarkModal', () => ({
+vi.mock('../../src/renderer/components/settings/SettingsModal/contents/CloudBackupRemarkModal', () => ({
   default: (): React.ReactElement | null => null,
 }));
 
-vi.mock('../../src/renderer/components/SettingsModal/contents/CloudBackupRestoreModal', () => ({
+vi.mock('../../src/renderer/components/settings/SettingsModal/contents/CloudBackupRestoreModal', () => ({
   default: (): React.ReactElement | null => null,
 }));
 
-vi.mock('../../src/renderer/components/SettingsModal/settingsViewContext', () => ({
+vi.mock('../../src/renderer/components/settings/SettingsModal/contents/CloudBackupRestoreProgressModal', () => ({
+  default: (): React.ReactElement | null => null,
+}));
+
+vi.mock('../../src/renderer/components/settings/SettingsModal/settingsViewContext', () => ({
   useSettingsViewMode: () => 'modal',
 }));
 
@@ -148,7 +194,7 @@ vi.mock('swr', () => ({
   }),
 }));
 
-import SystemModalContent from '../../src/renderer/components/SettingsModal/contents/SystemModalContent';
+import SystemModalContent from '../../src/renderer/components/settings/SettingsModal/contents/SystemModalContent';
 
 describe('SystemModalContent nutstore backup section', () => {
   it('keeps the entire backup panel collapsed by default, then shows the fixed Nutstore URL and current backup sections after expanding', async () => {

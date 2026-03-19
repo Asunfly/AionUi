@@ -5,7 +5,13 @@
  */
 
 import { DEFAULT_CLOUD_BACKUP_REMOTE_PATH } from '../../src/common/types/backup';
-import { getDefaultCloudBackupSettings, isCloudBackupConfigured, normalizeCloudBackupConfig, normalizeRemotePath, withDefaultCloudBackupSettings } from '../../src/common/utils/backup';
+import {
+  getDefaultCloudBackupSettings,
+  isCloudBackupConfigured,
+  normalizeCloudBackupConfig,
+  normalizeRemotePath,
+  withDefaultCloudBackupSettings,
+} from '../../src/common/utils/backup';
 
 describe('cloud backup utils', () => {
   it('fills missing settings with stable defaults', () => {

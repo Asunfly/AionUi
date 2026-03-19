@@ -37,7 +37,9 @@ const backupPathMocks = vi.hoisted(() => ({
   })),
   getCurrentManagedBackupEntries: vi.fn(() => []),
   getManagedBackupEntries: vi.fn(() => []),
-  filterManagedBackupEntriesByKeys: vi.fn((entries: Array<{ key: string }>, entryKeys: string[]) => entries.filter((entry) => entryKeys.includes(entry.key))),
+  filterManagedBackupEntriesByKeys: vi.fn((entries: Array<{ key: string }>, entryKeys: string[]) =>
+    entries.filter((entry) => entryKeys.includes(entry.key))
+  ),
 }));
 
 backupServiceMocks.getDatabase.mockImplementation(() => ({
@@ -168,7 +170,11 @@ describe('BackupService', () => {
 
     const fileName = service.getSuggestedFileName('nightly build');
 
-    expect(fileName).toMatch(new RegExp(`^AionUi_v1\\.8\\.23_\\d{8}-\\d{6}_[A-Z0-9]{6}_${process.platform}-${process.arch}_OFFICE-PC_nightly-build\\.zip$`));
+    expect(fileName).toMatch(
+      new RegExp(
+        `^AionUi_v1\\.8\\.23_\\d{8}-\\d{6}_[A-Z0-9]{6}_${process.platform}-${process.arch}_OFFICE-PC_nightly-build\\.zip$`
+      )
+    );
 
     hostnameSpy.mockRestore();
   });
@@ -180,7 +186,9 @@ describe('BackupService', () => {
 
     expect(backupServiceMocks.checkConnection).toHaveBeenCalledTimes(1);
     expect(backupServiceMocks.ensureDirectory).toHaveBeenCalledTimes(1);
-    expect(backupServiceMocks.checkConnection.mock.invocationCallOrder[0]).toBeLessThan(backupServiceMocks.ensureDirectory.mock.invocationCallOrder[0]);
+    expect(backupServiceMocks.checkConnection.mock.invocationCallOrder[0]).toBeLessThan(
+      backupServiceMocks.ensureDirectory.mock.invocationCallOrder[0]
+    );
   });
 
   it('fails fast when the remote backup directory cannot be prepared before snapshotting', async () => {
@@ -188,7 +196,9 @@ describe('BackupService', () => {
 
     backupServiceMocks.ensureDirectory.mockRejectedValueOnce(new Error('remote path unavailable'));
 
-    await expect(service.runRemoteBackup(settings, 'AionUi_v1_manual.zip', false, 'req-remote-path')).rejects.toMatchObject({
+    await expect(
+      service.runRemoteBackup(settings, 'AionUi_v1_manual.zip', false, 'req-remote-path')
+    ).rejects.toMatchObject({
       message: 'remote path unavailable',
     });
 
@@ -264,10 +274,20 @@ describe('BackupService', () => {
       },
     ]);
 
-    await service.runRemoteBackup(retentionSettings, 'AionUi_v1.8.23_20260307-154530_NEW001_win32-x64_OFFICE-PC.zip', false, 'req-retention');
+    await service.runRemoteBackup(
+      retentionSettings,
+      'AionUi_v1.8.23_20260307-154530_NEW001_win32-x64_OFFICE-PC.zip',
+      false,
+      'req-retention'
+    );
 
-    expect(backupServiceMocks.deleteFile).toHaveBeenCalledWith('AionUi_v1.8.23_20260307-154530_OLD001_win32-x64_OFFICE-PC.zip', expect.anything());
-    expect(backupServiceMocks.deleteFile.mock.calls.map(([fileName]) => fileName)).not.toContain('AionUi_v1.8.23_20260307-154530_NEW001_win32-x64_OFFICE-PC.zip');
+    expect(backupServiceMocks.deleteFile).toHaveBeenCalledWith(
+      'AionUi_v1.8.23_20260307-154530_OLD001_win32-x64_OFFICE-PC.zip',
+      expect.anything()
+    );
+    expect(backupServiceMocks.deleteFile.mock.calls.map(([fileName]) => fileName)).not.toContain(
+      'AionUi_v1.8.23_20260307-154530_NEW001_win32-x64_OFFICE-PC.zip'
+    );
   });
 
   it('collects default workspace directories referenced only by legacy chat history', async () => {
@@ -359,7 +379,9 @@ describe('BackupService', () => {
     zip.file('payload/db/aionui.db', 'sqlite');
     backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
 
-    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow(`Backup database version 999 is newer than supported version ${CURRENT_DB_VERSION}.`);
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow(
+      `Backup database version 999 is newer than supported version ${CURRENT_DB_VERSION}.`
+    );
     expect(backupServiceMocks.emit).toHaveBeenCalledWith(
       expect.objectContaining({
         task: 'restore',
@@ -402,7 +424,9 @@ describe('BackupService', () => {
     zip.file('payload\\db\\..\\..\\escape.txt', 'boom');
     backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
 
-    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow('Backup package contains unsafe file paths.');
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow(
+      'Backup package contains unsafe file paths.'
+    );
     expect(backupServiceMocks.emit).toHaveBeenCalledWith(
       expect.objectContaining({
         task: 'restore',
@@ -566,7 +590,12 @@ describe('BackupService', () => {
         requestId: 'restore-req',
       })
     );
-    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith(
+      [],
+      [],
+      'AionUi_v1_test.zip',
+      manifest.sourcePlatform
+    );
     expect(restoreRecoveryMocks.markPendingRestoreRecoveryForVerification).toHaveBeenCalledTimes(1);
     expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).not.toHaveBeenCalled();
   });
@@ -635,7 +664,12 @@ describe('BackupService', () => {
 
     expect(createRollbackSnapshot).toHaveBeenCalledWith([currentEntries[0]], expect.any(String));
     expect(replaceManagedData).toHaveBeenCalledWith([currentEntries[0]], expect.stringContaining('staging'));
-    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([currentEntries[0]], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith(
+      [currentEntries[0]],
+      [],
+      'AionUi_v1_test.zip',
+      manifest.sourcePlatform
+    );
   });
 
   it('cleans pending restore recovery state when restore fails after snapshotting', async () => {
@@ -667,10 +701,19 @@ describe('BackupService', () => {
     zip.file('payload/db/aionui.db', 'sqlite');
     backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
 
-    (service as unknown as { rewriteManagedWorkspacePaths: (value: unknown) => Promise<void> }).rewriteManagedWorkspacePaths = vi.fn().mockRejectedValue(new Error('restore failed'));
+    (
+      service as unknown as { rewriteManagedWorkspacePaths: (value: unknown) => Promise<void> }
+    ).rewriteManagedWorkspacePaths = vi.fn().mockRejectedValue(new Error('restore failed'));
 
-    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req')).rejects.toThrow('restore failed');
-    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith([], [], 'AionUi_v1_test.zip', manifest.sourcePlatform);
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req')).rejects.toThrow(
+      'restore failed'
+    );
+    expect(restoreRecoveryMocks.preparePendingRestoreRecovery).toHaveBeenCalledWith(
+      [],
+      [],
+      'AionUi_v1_test.zip',
+      manifest.sourcePlatform
+    );
     expect(restoreRecoveryMocks.confirmPendingRestoreRecovery).toHaveBeenCalled();
   });
 
@@ -719,7 +762,9 @@ describe('BackupService', () => {
       rewriteManagedWorkspacePaths,
     });
 
-    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req')).rejects.toThrow('reopen failed');
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip', 'restore-req')).rejects.toThrow(
+      'reopen failed'
+    );
 
     expect(replaceManagedData).toHaveBeenNthCalledWith(1, [], expect.stringContaining('staging'));
     expect(replaceManagedData).toHaveBeenNthCalledWith(2, [], expect.stringContaining('rollback'));
@@ -771,7 +816,9 @@ describe('BackupService', () => {
     zip.file('payload/db/aionui.db', 'sqlite');
     backupServiceMocks.downloadFile.mockResolvedValue(await zip.generateAsync({ type: 'nodebuffer' }));
 
-    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow('Backup payload is missing for managed entries: configFile');
+    await expect(service.restoreRemotePackage(settings, 'AionUi_v1_test.zip')).rejects.toThrow(
+      'Backup payload is missing for managed entries: configFile'
+    );
     expect(restoreRecoveryMocks.preparePendingRestoreRecovery).not.toHaveBeenCalled();
   });
 

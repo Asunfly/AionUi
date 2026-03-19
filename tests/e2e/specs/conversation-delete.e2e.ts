@@ -29,7 +29,10 @@ async function ensureConversationRowVisible(page: import('@playwright/test').Pag
   return row;
 }
 
-async function openDeleteDialogForConversation(page: import('@playwright/test').Page, conversationId: string): Promise<void> {
+async function openDeleteDialogForConversation(
+  page: import('@playwright/test').Page,
+  conversationId: string
+): Promise<void> {
   const row = await ensureConversationRowVisible(page, conversationId);
   await row.hover();
 

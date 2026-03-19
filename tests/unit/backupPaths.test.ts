@@ -39,7 +39,16 @@ describe('backupPaths', () => {
 
     const entries = getManagedBackupEntries('/mock/data/aionui.snapshot.db');
 
-    expect(entries.map((entry) => entry.key)).toEqual(['database', 'configFile', 'chatFile', 'chatMessageFile', 'chatHistory', 'assistants', 'skills', 'previewHistory']);
+    expect(entries.map((entry) => entry.key)).toEqual([
+      'database',
+      'configFile',
+      'chatFile',
+      'chatMessageFile',
+      'chatHistory',
+      'assistants',
+      'skills',
+      'previewHistory',
+    ]);
     expect(entries[0]).toMatchObject({
       key: 'database',
       type: 'file',

@@ -5,6 +5,21 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { IWorkerTaskManager } from '../../src/process/task/IWorkerTaskManager';
+
+function makeTaskManager(overrides?: Partial<IWorkerTaskManager>): IWorkerTaskManager {
+  return {
+    getTask: vi.fn(() => undefined),
+    getOrBuildTask: vi.fn(async () => {
+      throw new Error('not found');
+    }),
+    addTask: vi.fn(),
+    kill: vi.fn(),
+    clear: vi.fn(),
+    listTasks: vi.fn(() => []),
+    ...overrides,
+  };
+}
 
 describe('applicationBridge CDP functionality', () => {
   const originalEnv = { ...process.env };
@@ -17,6 +32,7 @@ describe('applicationBridge CDP functionality', () => {
     vi.doMock('electron', () => ({
       app: {
         isPackaged: false,
+        setName: vi.fn(),
         getPath: vi.fn((name: string) => {
           if (name === 'userData') return '/mock/userData';
           return '/mock/path';
@@ -103,7 +119,8 @@ describe('applicationBridge CDP functionality', () => {
     it('should initialize without errors', async () => {
       const { initApplicationBridge } = await import('@/process/bridge/applicationBridge');
 
-      expect(() => initApplicationBridge()).not.toThrow();
+      const taskMgr = makeTaskManager();
+      expect(() => initApplicationBridge(taskMgr)).not.toThrow();
     });
   });
 
@@ -133,6 +150,7 @@ describe('CDP configuration functions', () => {
     vi.doMock('electron', () => ({
       app: {
         isPackaged: false,
+        setName: vi.fn(),
         getPath: vi.fn(() => '/mock/userData'),
         commandLine: { appendSwitch: vi.fn() },
       },
@@ -164,6 +182,7 @@ describe('CDP configuration functions', () => {
     vi.doMock('electron', () => ({
       app: {
         isPackaged: false,
+        setName: vi.fn(),
         getPath: vi.fn(() => '/mock/userData'),
         commandLine: { appendSwitch: vi.fn() },
       },
@@ -193,6 +212,7 @@ describe('CDP configuration functions', () => {
     vi.doMock('electron', () => ({
       app: {
         isPackaged: false,
+        setName: vi.fn(),
         getPath: vi.fn(() => '/mock/userData'),
         commandLine: { appendSwitch: vi.fn() },
       },
@@ -215,10 +235,57 @@ describe('CDP configuration functions', () => {
     expect(mockWriteFileSync).toHaveBeenCalled();
   });
 
+  it('restart handler calls workerTaskManager.clear() via injected dependency', async () => {
+    // Capture handlers using hoisted provider mock
+    const capturedHandlers: Record<string, (...args: any[]) => any> = {};
+    vi.doMock('electron', () => ({
+      app: {
+        isPackaged: false,
+        setName: vi.fn(),
+        getPath: vi.fn(() => '/tmp'),
+        commandLine: { appendSwitch: vi.fn() },
+        relaunch: vi.fn(),
+        exit: vi.fn(),
+      },
+    }));
+    vi.doMock('../../src/common', () => ({
+      ipcBridge: {
+        application: {
+          restart: {
+            provider: vi.fn((fn: (...args: any[]) => any) => {
+              capturedHandlers['restart'] = fn;
+            }),
+            emit: vi.fn(),
+            invoke: vi.fn(),
+          },
+          updateSystemInfo: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          systemInfo: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          getPath: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          isDevToolsOpened: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          openDevTools: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          getZoomFactor: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          setZoomFactor: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          getCdpStatus: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+          updateCdpConfig: { provider: vi.fn(), emit: vi.fn(), invoke: vi.fn() },
+        },
+      },
+    }));
+
+    vi.resetModules();
+    const { initApplicationBridge } = await import('../../src/process/bridge/applicationBridge');
+    const taskMgr = makeTaskManager();
+    initApplicationBridge(taskMgr);
+
+    expect(capturedHandlers['restart']).toBeTypeOf('function');
+    await capturedHandlers['restart']();
+    expect(taskMgr.clear).toHaveBeenCalled();
+  });
+
   it('should provide unregisterInstance function', async () => {
     vi.doMock('electron', () => ({
       app: {
         isPackaged: false,
+        setName: vi.fn(),
         getPath: vi.fn(() => '/mock/userData'),
         commandLine: { appendSwitch: vi.fn() },
       },

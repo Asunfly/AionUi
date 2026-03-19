@@ -223,11 +223,16 @@ describe('deleteConversationData', () => {
     });
 
     const { deleteConversationData } = await import('../../src/process/services/conversation/deleteConversationData');
-    const [firstDeleted, secondDeleted] = await Promise.all([deleteConversationData('conv-1'), deleteConversationData('conv-2')]);
+    const [firstDeleted, secondDeleted] = await Promise.all([
+      deleteConversationData('conv-1'),
+      deleteConversationData('conv-2'),
+    ]);
 
     expect(firstDeleted).toBe(true);
     expect(secondDeleted).toBe(true);
     expect(deleteMocks.movePathToTrash).toHaveBeenCalled();
-    expect(deleteMocks.movePathToTrash.mock.calls.map(([workspace]) => workspace)).toContain(path.join('/tmp/aionui-work', 'shared-temp-workspace'));
+    expect(deleteMocks.movePathToTrash.mock.calls.map(([workspace]) => workspace)).toContain(
+      path.join('/tmp/aionui-work', 'shared-temp-workspace')
+    );
   });
 });

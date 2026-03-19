@@ -40,7 +40,12 @@ function normalizeForComparison(value: string, platform: TWorkspacePlatform): st
   return platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
-export function getManagedWorkspaceRelativePath(workspace: string | null | undefined, workDir: string, platform: TWorkspacePlatform = process.platform, customWorkspace?: boolean): string | null {
+export function getManagedWorkspaceRelativePath(
+  workspace: string | null | undefined,
+  workDir: string,
+  platform: TWorkspacePlatform = process.platform,
+  customWorkspace?: boolean
+): string | null {
   if (!workspace || !workDir || customWorkspace === true) {
     return null;
   }
@@ -63,7 +68,11 @@ export function getManagedWorkspaceRelativePath(workspace: string | null | undef
   return relativePath ? normalizeManagedWorkspaceRelativePath(relativePath) : null;
 }
 
-export function collectManagedWorkspaceRelativePaths(items: IWorkspacePathSource[], workDir: string, platform: TWorkspacePlatform = process.platform): string[] {
+export function collectManagedWorkspaceRelativePaths(
+  items: IWorkspacePathSource[],
+  workDir: string,
+  platform: TWorkspacePlatform = process.platform
+): string[] {
   const relativeRoots = new Set<string>();
 
   items.forEach((item) => {
@@ -76,7 +85,13 @@ export function collectManagedWorkspaceRelativePaths(items: IWorkspacePathSource
   return Array.from(relativeRoots).sort((left, right) => left.localeCompare(right));
 }
 
-export function mapManagedWorkspacePath(workspace: string | null | undefined, sourceWorkDir: string, targetWorkDir: string, sourcePlatform: TWorkspacePlatform = process.platform, customWorkspace?: boolean): string | null | undefined {
+export function mapManagedWorkspacePath(
+  workspace: string | null | undefined,
+  sourceWorkDir: string,
+  targetWorkDir: string,
+  sourcePlatform: TWorkspacePlatform = process.platform,
+  customWorkspace?: boolean
+): string | null | undefined {
   if (!workspace) {
     return workspace;
   }
@@ -90,7 +105,12 @@ export function mapManagedWorkspacePath(workspace: string | null | undefined, so
   return joiner.join(targetWorkDir, ...relativePath.split('/'));
 }
 
-export function remapConversationExtraPaths<T>(extra: T, sourceWorkDir: string, targetWorkDir: string, sourcePlatform: TWorkspacePlatform = process.platform): { changed: boolean; value: T } {
+export function remapConversationExtraPaths<T>(
+  extra: T,
+  sourceWorkDir: string,
+  targetWorkDir: string,
+  sourcePlatform: TWorkspacePlatform = process.platform
+): { changed: boolean; value: T } {
   if (!extra || typeof extra !== 'object' || Array.isArray(extra)) {
     return { changed: false, value: extra };
   }
@@ -100,7 +120,13 @@ export function remapConversationExtraPaths<T>(extra: T, sourceWorkDir: string, 
   const next: Record<string, unknown> = { ...record };
 
   if (typeof record.workspace === 'string') {
-    const mappedWorkspace = mapManagedWorkspacePath(record.workspace, sourceWorkDir, targetWorkDir, sourcePlatform, typeof record.customWorkspace === 'boolean' ? record.customWorkspace : undefined);
+    const mappedWorkspace = mapManagedWorkspacePath(
+      record.workspace,
+      sourceWorkDir,
+      targetWorkDir,
+      sourcePlatform,
+      typeof record.customWorkspace === 'boolean' ? record.customWorkspace : undefined
+    );
     if (mappedWorkspace && mappedWorkspace !== record.workspace) {
       next.workspace = mappedWorkspace;
       changed = true;
@@ -111,7 +137,12 @@ export function remapConversationExtraPaths<T>(extra: T, sourceWorkDir: string, 
   if (runtimeValidation && typeof runtimeValidation === 'object' && !Array.isArray(runtimeValidation)) {
     const runtimeValidationRecord = runtimeValidation as Record<string, unknown>;
     if (typeof runtimeValidationRecord.expectedWorkspace === 'string') {
-      const mappedExpectedWorkspace = mapManagedWorkspacePath(runtimeValidationRecord.expectedWorkspace, sourceWorkDir, targetWorkDir, sourcePlatform);
+      const mappedExpectedWorkspace = mapManagedWorkspacePath(
+        runtimeValidationRecord.expectedWorkspace,
+        sourceWorkDir,
+        targetWorkDir,
+        sourcePlatform
+      );
       if (mappedExpectedWorkspace && mappedExpectedWorkspace !== runtimeValidationRecord.expectedWorkspace) {
         next.runtimeValidation = {
           ...runtimeValidationRecord,

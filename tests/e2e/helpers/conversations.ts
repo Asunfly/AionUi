@@ -41,7 +41,11 @@ export async function listUserConversations(page: Page): Promise<TChatConversati
   });
 }
 
-export async function createConversationForWorkspaceMode(page: Page, mode: E2EWorkspaceMode, nameSuffix: string): Promise<TChatConversation> {
+export async function createConversationForWorkspaceMode(
+  page: Page,
+  mode: E2EWorkspaceMode,
+  nameSuffix: string
+): Promise<TChatConversation> {
   const randomToken = Math.random().toString(36).slice(2, 10);
   const conversationId = `e2e-${mode}-${Date.now()}-${randomToken}`;
   const workspacePath = `C:/aionui-e2e/${conversationId}`;
@@ -79,4 +83,3 @@ export async function cleanupE2EConversations(page: Page, prefix = E2E_CONVERSAT
     })
   );
 }
-

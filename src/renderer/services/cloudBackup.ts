@@ -5,10 +5,16 @@
  */
 
 import { ipcBridge } from '@/common';
-import type { IBackupManifest, IBackupTaskEvent, ICloudBackupSettings, IRemoteBackupFile, TBackupErrorCode } from '@/common/types/backup';
+import type {
+  IBackupManifest,
+  IBackupTaskEvent,
+  ICloudBackupSettings,
+  IRemoteBackupFile,
+  TBackupErrorCode,
+} from '@/common/types/backup';
 import { withDefaultCloudBackupSettings } from '@/common/utils/backup';
 import { ConfigStorage } from '@/common/storage';
-import i18n from '@/renderer/i18n';
+import i18n from '@/renderer/services/i18n';
 import { isElectronDesktop } from '@/renderer/utils/platform';
 import { Message } from '@arco-design/web-react';
 
@@ -115,7 +121,9 @@ function handleTaskEvent(event: IBackupTaskEvent): void {
       lastBackupMessage: errorMessage,
     });
     if (event.task === 'backup' && event.automatic) {
-      Message.error(errorMessage || i18n.t('settings.backup.taskFailed', { defaultValue: '{{task}} failed', task: taskLabel }));
+      Message.error(
+        errorMessage || i18n.t('settings.backup.taskFailed', { defaultValue: '{{task}} failed', task: taskLabel })
+      );
     }
     return;
   }
@@ -185,13 +193,18 @@ export async function getSuggestedCloudBackupFileName(remark?: string): Promise<
 
 export async function checkCloudBackupConnection(settings: ICloudBackupSettings): Promise<void> {
   ensureTaskSubscription();
-  const result = (await ipcBridge.backup.checkRemoteConnection.invoke({ settings })) as IBridgeResult<{ reachable: boolean }>;
+  const result = (await ipcBridge.backup.checkRemoteConnection.invoke({ settings })) as IBridgeResult<{
+    reachable: boolean;
+  }>;
   if (!result.success) {
     throw toCloudBackupError(result);
   }
 }
 
-export async function runCloudRemoteBackup(settings: ICloudBackupSettings, options?: { fileName?: string; automatic?: boolean; requestId?: string }): Promise<IRemoteBackupFile> {
+export async function runCloudRemoteBackup(
+  settings: ICloudBackupSettings,
+  options?: { fileName?: string; automatic?: boolean; requestId?: string }
+): Promise<IRemoteBackupFile> {
   ensureTaskSubscription();
   return unwrapResponse(
     ipcBridge.backup.runRemoteBackup.invoke({
@@ -214,7 +227,11 @@ export async function listCloudRemotePackages(settings: ICloudBackupSettings): P
   return unwrapResponse(ipcBridge.backup.listRemotePackages.invoke({ settings }));
 }
 
-export async function restoreCloudRemotePackage(settings: ICloudBackupSettings, fileName: string, options?: { requestId?: string }): Promise<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }> {
+export async function restoreCloudRemotePackage(
+  settings: ICloudBackupSettings,
+  fileName: string,
+  options?: { requestId?: string }
+): Promise<{ fileName: string; restartRequired: boolean; manifest?: IBackupManifest }> {
   ensureTaskSubscription();
   return unwrapResponse(
     ipcBridge.backup.restoreRemotePackage.invoke({

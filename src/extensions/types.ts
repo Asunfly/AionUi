@@ -58,7 +58,7 @@ export const ExtensionMetaSchema = z
       .optional(),
     /**
      * i18n configuration for the extension.
-     * Follows the same structure as src/renderer/i18n/locales:
+     * Follows the same structure as src/renderer/services/i18n/locales:
      *   i18n/{locale}/{module}.json
      * e.g. i18n/en-US/extension.json, i18n/zh-CN/assistants.json
      *
@@ -228,7 +228,10 @@ export const ExtAssistantSchema = z.object({
   description: z.string().optional(),
   avatar: z.string().optional(),
   // Accept built-in preset types OR any extension-contributed adapter ID (e.g. "ext-buddy")
-  presetAgentType: z.union([z.enum(PRESET_AGENT_TYPES), z.string().min(1, 'presetAgentType must be a non-empty string')]),
+  presetAgentType: z.union([
+    z.enum(PRESET_AGENT_TYPES),
+    z.string().min(1, 'presetAgentType must be a non-empty string'),
+  ]),
   contextFile: z.string().min(1, 'contextFile is required'),
   models: z.array(z.string()).optional(),
   enabledSkills: z.array(z.string()).optional(),
@@ -329,7 +332,16 @@ export const ExtModelProviderSchema = z.object({
  * Route-page tabs:  gemini | model | agent | tools | display | webui | system | about
  * Modal-only tabs:  gemini | model | tools | webui | system | about
  */
-export const BUILTIN_SETTINGS_TAB_IDS = ['gemini', 'model', 'agent', 'tools', 'display', 'webui', 'system', 'about'] as const;
+export const BUILTIN_SETTINGS_TAB_IDS = [
+  'gemini',
+  'model',
+  'agent',
+  'tools',
+  'display',
+  'webui',
+  'system',
+  'about',
+] as const;
 
 export const ExtSettingsTabSchema = z.object({
   id: z.string().min(1, 'Settings tab id is required'),

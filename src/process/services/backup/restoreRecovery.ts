@@ -5,7 +5,7 @@
  */
 
 import { closeDatabase, getDatabase } from '@/process/database/export';
-import WorkerManage from '@/process/WorkerManage';
+import { workerTaskManager } from '@/process/task/workerTaskManagerSingleton';
 import { copyDirectoryRecursively, ensureDirectory } from '@/process/utils';
 import fs from 'fs/promises';
 import path from 'path';
@@ -151,7 +151,15 @@ async function readPendingRestoreRecoveryState(): Promise<IPendingRestoreRecover
   try {
     const raw = await fs.readFile(statePath, 'utf-8');
     const parsed = JSON.parse(raw) as Partial<IPendingRestoreRecoveryState>;
-    if (parsed.version !== RESTORE_RECOVERY_STATE_VERSION || typeof parsed.fileName !== 'string' || typeof parsed.sourcePlatform !== 'string' || typeof parsed.createdAt !== 'string' || typeof parsed.snapshotDir !== 'string' || !Array.isArray(parsed.relativeRoots) || typeof parsed.startupAttempts !== 'number') {
+    if (
+      parsed.version !== RESTORE_RECOVERY_STATE_VERSION ||
+      typeof parsed.fileName !== 'string' ||
+      typeof parsed.sourcePlatform !== 'string' ||
+      typeof parsed.createdAt !== 'string' ||
+      typeof parsed.snapshotDir !== 'string' ||
+      !Array.isArray(parsed.relativeRoots) ||
+      typeof parsed.startupAttempts !== 'number'
+    ) {
       return null;
     }
 
@@ -161,7 +169,9 @@ async function readPendingRestoreRecoveryState(): Promise<IPendingRestoreRecover
       sourcePlatform: parsed.sourcePlatform,
       createdAt: parsed.createdAt,
       snapshotDir: parsed.snapshotDir,
-      managedEntryKeys: Array.isArray(parsed.managedEntryKeys) ? parsed.managedEntryKeys.filter((item): item is string => typeof item === 'string') : undefined,
+      managedEntryKeys: Array.isArray(parsed.managedEntryKeys)
+        ? parsed.managedEntryKeys.filter((item): item is string => typeof item === 'string')
+        : undefined,
       relativeRoots: parsed.relativeRoots.filter((item): item is string => typeof item === 'string'),
       phase: parsed.phase === 'verify' ? 'verify' : 'restoring',
       startupAttempts: parsed.startupAttempts,
@@ -189,17 +199,24 @@ async function writePendingRestoreRecoveryState(state: IPendingRestoreRecoverySt
 }
 
 async function rollbackPendingRestoreRecovery(state: IPendingRestoreRecoveryState): Promise<void> {
-  WorkerManage.clear();
+  workerTaskManager.clear();
   closeDatabase();
 
   const currentEntries = getCurrentManagedBackupEntries();
-  const entries = state.managedEntryKeys?.length ? filterManagedBackupEntriesByKeys(currentEntries, state.managedEntryKeys) : currentEntries;
+  const entries = state.managedEntryKeys?.length
+    ? filterManagedBackupEntriesByKeys(currentEntries, state.managedEntryKeys)
+    : currentEntries;
   await replaceManagedData(entries, state.snapshotDir);
   await replaceDefaultWorkspaceDirectories(state.relativeRoots, state.snapshotDir);
   getDatabase();
 }
 
-export async function preparePendingRestoreRecovery(entries: IManagedBackupEntry[], relativeRoots: string[], fileName: string, sourcePlatform: string): Promise<void> {
+export async function preparePendingRestoreRecovery(
+  entries: IManagedBackupEntry[],
+  relativeRoots: string[],
+  fileName: string,
+  sourcePlatform: string
+): Promise<void> {
   const recoveryRoot = getRestoreRecoveryRoot();
   await removeIfExists(recoveryRoot);
   ensureDirectory(recoveryRoot);

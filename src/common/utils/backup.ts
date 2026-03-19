@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { DEFAULT_CLOUD_BACKUP_REMOTE_PATH, NUTSTORE_WEBDAV_HOST, type ICloudBackupSettings, type INutstoreBackupConfig, type IWebDavBackupConfig, type TBackupProvider } from '@/common/types/backup';
+import {
+  DEFAULT_CLOUD_BACKUP_REMOTE_PATH,
+  NUTSTORE_WEBDAV_HOST,
+  type ICloudBackupSettings,
+  type INutstoreBackupConfig,
+  type IWebDavBackupConfig,
+  type TBackupProvider,
+} from '@/common/types/backup';
 
 export interface INormalizedCloudBackupConfig {
   provider: TBackupProvider;

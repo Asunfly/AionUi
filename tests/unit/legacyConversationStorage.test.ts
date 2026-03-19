@@ -55,7 +55,8 @@ describe('deleteLegacyConversationStorage', () => {
       },
     ]);
 
-    const { deleteLegacyConversationStorage } = await import('../../src/process/services/conversation/legacyConversationStorage');
+    const { deleteLegacyConversationStorage } =
+      await import('../../src/process/services/conversation/legacyConversationStorage');
     await deleteLegacyConversationStorage('conv-1');
 
     expect(storageMocks.setChatHistory).toHaveBeenCalledWith([
@@ -81,7 +82,8 @@ describe('deleteLegacyConversationStorage', () => {
       },
     ]);
 
-    const { deleteLegacyConversationStorage } = await import('../../src/process/services/conversation/legacyConversationStorage');
+    const { deleteLegacyConversationStorage } =
+      await import('../../src/process/services/conversation/legacyConversationStorage');
     await deleteLegacyConversationStorage('conv-missing');
 
     expect(storageMocks.setChatHistory).not.toHaveBeenCalled();

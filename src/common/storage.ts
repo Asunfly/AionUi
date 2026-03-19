@@ -72,7 +72,8 @@ export interface IConfigStorageRefer {
   'css.activeThemeId': string; // 当前激活的主题 ID / Currently active theme ID
   'gemini.defaultModel': string | { id: string; useModel: string };
   'tools.imageGenerationModel': TProviderWithModel & {
-    switch: boolean;
+    /** @deprecated Image generation is now controlled via built-in MCP server toggle */
+    switch?: boolean;
   };
   // 是否在粘贴文件到工作区时询问确认（true = 不再询问）
   'workspace.pasteConfirm'?: boolean;
@@ -89,6 +90,10 @@ export interface IConfigStorageRefer {
   'migration.promptsI18nAdded'?: boolean;
   // 关闭窗口时最小化到系统托盘 / Minimize to system tray when closing window
   'system.closeToTray'?: boolean;
+  // 任务完成时显示系统通知 / Show system notification when task completes
+  'system.notificationEnabled'?: boolean;
+  // 定时任务完成时显示系统通知 / Show system notification when scheduled task completes
+  'system.cronNotificationEnabled'?: boolean;
   // Telegram assistant default model / Telegram 助手默认模型
   'assistant.telegram.defaultModel'?: {
     id: string;
@@ -123,6 +128,8 @@ export interface IConfigStorageRefer {
     name?: string;
   };
   'backup.cloud'?: ICloudBackupSettings;
+  // Skills Market: whether the aionui-skills builtin skill is enabled
+  'skillsMarket.enabled'?: boolean;
 }
 
 export interface IEnvStorageRefer {
@@ -434,7 +441,11 @@ export interface IMcpServerTransportStreamableHTTP {
   headers?: Record<string, string>;
 }
 
-export type IMcpServerTransport = IMcpServerTransportStdio | IMcpServerTransportSSE | IMcpServerTransportHTTP | IMcpServerTransportStreamableHTTP;
+export type IMcpServerTransport =
+  | IMcpServerTransportStdio
+  | IMcpServerTransportSSE
+  | IMcpServerTransportHTTP
+  | IMcpServerTransportStreamableHTTP;
 
 export interface IMcpServer {
   id: string;
@@ -448,7 +459,12 @@ export interface IMcpServer {
   createdAt: number;
   updatedAt: number;
   originalJson: string; // 存储原始JSON配置，用于编辑时的准确显示
+  /** Built-in MCP server managed by AionUi (hide edit/delete in UI) */
+  builtin?: boolean;
 }
+
+/** Stable ID for the built-in image generation MCP server */
+export const BUILTIN_IMAGE_GEN_ID = 'builtin-image-gen';
 
 export interface IMcpTool {
   name: string;

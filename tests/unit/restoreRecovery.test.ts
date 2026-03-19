@@ -30,8 +30,8 @@ const restoreRecoveryState = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock('@/process/WorkerManage', () => ({
-  default: {
+vi.mock('@/process/task/workerTaskManagerSingleton', () => ({
+  workerTaskManager: {
     clear: restoreRecoveryMocks.workerClear,
   },
 }));
@@ -42,6 +42,7 @@ vi.mock('@/process/database/export', () => ({
 }));
 
 vi.mock('@/process/utils', () => ({
+  getConfigPath: () => '/tmp/config',
   ensureDirectory: (dirPath: string) => {
     fsSync.mkdirSync(dirPath, { recursive: true });
   },
@@ -60,7 +61,8 @@ vi.mock('../../src/process/services/backup/backupPaths', () => ({
     conversationHistoryDir: path.join(restoreRecoveryState.cacheDir, 'aionui-chat-history'),
   }),
   getCurrentManagedBackupEntries: () => restoreRecoveryState.entries,
-  filterManagedBackupEntriesByKeys: (entries: Array<{ key: string }>, entryKeys: string[]) => entries.filter((entry) => entryKeys.includes(entry.key)),
+  filterManagedBackupEntriesByKeys: (entries: Array<{ key: string }>, entryKeys: string[]) =>
+    entries.filter((entry) => entryKeys.includes(entry.key)),
 }));
 
 describe('restoreRecovery', () => {
@@ -119,9 +121,15 @@ describe('restoreRecovery', () => {
   });
 
   it('rolls back immediately on the first startup when restore preparation was interrupted', async () => {
-    const { beginPendingRestoreRecoveryVerification, preparePendingRestoreRecovery } = await import('../../src/process/services/backup/restoreRecovery');
+    const { beginPendingRestoreRecoveryVerification, preparePendingRestoreRecovery } =
+      await import('../../src/process/services/backup/restoreRecovery');
 
-    await preparePendingRestoreRecovery(restoreRecoveryState.entries, ['default-temp-workspace'], 'AionUi_v1_test.zip', 'win32');
+    await preparePendingRestoreRecovery(
+      restoreRecoveryState.entries,
+      ['default-temp-workspace'],
+      'AionUi_v1_test.zip',
+      'win32'
+    );
 
     const statePath = path.join(restoreRecoveryState.cacheDir, 'restore-recovery', 'pending-restore.json');
     const initialState = JSON.parse(await fs.readFile(statePath, 'utf-8')) as {
@@ -138,8 +146,15 @@ describe('restoreRecovery', () => {
     expect(initialState.phase).toBe('restoring');
     expect(initialState.relativeRoots).toEqual(['default-temp-workspace']);
     expect(initialState.startupAttempts).toBe(0);
-    expect(await fs.readFile(path.join(initialState.snapshotDir, 'payload', 'cache', 'aionui-config.txt'), 'utf-8')).toBe('original-config');
-    expect(await fs.readFile(path.join(initialState.snapshotDir, 'payload', 'workspaces', 'default-temp-workspace', 'note.txt'), 'utf-8')).toBe('original-workspace');
+    expect(
+      await fs.readFile(path.join(initialState.snapshotDir, 'payload', 'cache', 'aionui-config.txt'), 'utf-8')
+    ).toBe('original-config');
+    expect(
+      await fs.readFile(
+        path.join(initialState.snapshotDir, 'payload', 'workspaces', 'default-temp-workspace', 'note.txt'),
+        'utf-8'
+      )
+    ).toBe('original-workspace');
 
     await fs.writeFile(configFilePath, 'partially-restored-config');
     await fs.writeFile(path.join(managedDirPath, 'assistant.md'), 'partially-restored-assistant');
@@ -155,9 +170,18 @@ describe('restoreRecovery', () => {
   });
 
   it('marks completed restores for verification and rolls back on the next startup when still unconfirmed', async () => {
-    const { beginPendingRestoreRecoveryVerification, markPendingRestoreRecoveryForVerification, preparePendingRestoreRecovery } = await import('../../src/process/services/backup/restoreRecovery');
+    const {
+      beginPendingRestoreRecoveryVerification,
+      markPendingRestoreRecoveryForVerification,
+      preparePendingRestoreRecovery,
+    } = await import('../../src/process/services/backup/restoreRecovery');
 
-    await preparePendingRestoreRecovery(restoreRecoveryState.entries, ['default-temp-workspace'], 'AionUi_v1_test.zip', 'win32');
+    await preparePendingRestoreRecovery(
+      restoreRecoveryState.entries,
+      ['default-temp-workspace'],
+      'AionUi_v1_test.zip',
+      'win32'
+    );
     await markPendingRestoreRecoveryForVerification();
 
     const statePath = path.join(restoreRecoveryState.cacheDir, 'restore-recovery', 'pending-restore.json');
@@ -195,9 +219,15 @@ describe('restoreRecovery', () => {
   });
 
   it('treats phase-less recovery state as interrupted restore instead of inferring verify mode', async () => {
-    const { beginPendingRestoreRecoveryVerification, preparePendingRestoreRecovery } = await import('../../src/process/services/backup/restoreRecovery');
+    const { beginPendingRestoreRecoveryVerification, preparePendingRestoreRecovery } =
+      await import('../../src/process/services/backup/restoreRecovery');
 
-    await preparePendingRestoreRecovery(restoreRecoveryState.entries, ['default-temp-workspace'], 'AionUi_v1_test.zip', 'win32');
+    await preparePendingRestoreRecovery(
+      restoreRecoveryState.entries,
+      ['default-temp-workspace'],
+      'AionUi_v1_test.zip',
+      'win32'
+    );
 
     const statePath = path.join(restoreRecoveryState.cacheDir, 'restore-recovery', 'pending-restore.json');
     const legacyLikeState = JSON.parse(await fs.readFile(statePath, 'utf-8')) as {

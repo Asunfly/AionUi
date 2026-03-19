@@ -95,7 +95,10 @@ export function getManagedBackupEntries(dbSnapshotPath: string): IManagedBackupE
   ];
 }
 
-export function filterManagedBackupEntriesByKeys(entries: IManagedBackupEntry[], entryKeys: string[]): IManagedBackupEntry[] {
+export function filterManagedBackupEntriesByKeys(
+  entries: IManagedBackupEntry[],
+  entryKeys: string[]
+): IManagedBackupEntry[] {
   if (!entryKeys.length) {
     return [];
   }

@@ -4,18 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { BrowserWindow } from 'electron';
 import { app, session } from 'electron';
+import fs from 'fs/promises';
 import path from 'path';
+import type { IWorkerTaskManager } from '@process/task/IWorkerTaskManager';
 import { ipcBridge } from '../../common';
 import { getSystemDir, ProcessEnv } from '../initStorage';
 import { copyDirectoryRecursively, getTempPath } from '../utils';
-import WorkerManage from '../WorkerManage';
 import { getZoomFactor, setZoomFactor } from '../utils/zoom';
 import { getCdpStatus, updateCdpConfig } from '../../utils/configureChromium';
-import fs from 'fs/promises';
 
-async function clearRuntimeState(): Promise<void> {
-  WorkerManage.clear();
+let mainWindowRef: BrowserWindow | null = null;
+
+export function setApplicationMainWindow(win: BrowserWindow): void {
+  mainWindowRef = win;
+}
+
+async function clearRuntimeState(workerTaskManager: IWorkerTaskManager): Promise<void> {
+  workerTaskManager.clear();
 
   const defaultSession = session.defaultSession;
   if (defaultSession) {
@@ -26,19 +33,20 @@ async function clearRuntimeState(): Promise<void> {
   }
 
   await fs.rm(getTempPath(), { recursive: true, force: true }).catch((): void => undefined);
-  await fs.rm(path.join(getSystemDir().cacheDir, 'temp'), { recursive: true, force: true }).catch((): void => undefined);
+  await fs
+    .rm(path.join(getSystemDir().cacheDir, 'temp'), { recursive: true, force: true })
+    .catch((): void => undefined);
 }
 
-export function initApplicationBridge(): void {
+export function initApplicationBridge(workerTaskManager: IWorkerTaskManager): void {
   ipcBridge.application.restart.provider(async (options) => {
     if (options?.clearRuntimeState) {
-      await clearRuntimeState();
+      await clearRuntimeState(workerTaskManager);
     } else {
-      WorkerManage.clear();
+      workerTaskManager.clear();
     }
 
     app.relaunch();
-
     app.exit(0);
     return Promise.resolve();
   });
@@ -64,8 +72,42 @@ export function initApplicationBridge(): void {
     return Promise.resolve(app.getPath(name));
   });
 
+  ipcBridge.application.isDevToolsOpened.provider(() => {
+    if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+      return Promise.resolve(mainWindowRef.webContents.isDevToolsOpened());
+    }
+    return Promise.resolve(false);
+  });
+
   ipcBridge.application.openDevTools.provider(() => {
-    // This will be handled by the main window when needed
+    if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+      const win = mainWindowRef;
+      const wasOpen = win.webContents.isDevToolsOpened();
+
+      if (wasOpen) {
+        win.webContents.closeDevTools();
+        return Promise.resolve(false);
+      } else {
+        return new Promise((resolve) => {
+          const onOpened = () => {
+            win.webContents.off('devtools-opened', onOpened);
+            resolve(true);
+          };
+
+          win.webContents.once('devtools-opened', onOpened);
+          win.webContents.openDevTools();
+
+          setTimeout(() => {
+            win.webContents.off('devtools-opened', onOpened);
+            if (win.isDestroyed()) {
+              resolve(false);
+              return;
+            }
+            resolve(win.webContents.isDevToolsOpened());
+          }, 500);
+        });
+      }
+    }
     return Promise.resolve(false);
   });
 
@@ -75,11 +117,9 @@ export function initApplicationBridge(): void {
     return Promise.resolve(setZoomFactor(factor));
   });
 
-  // CDP status and configuration
   ipcBridge.application.getCdpStatus.provider(async () => {
     try {
       const status = getCdpStatus();
-      // If port is set, CDP is considered enabled (verification is optional)
       return { success: true, data: status };
     } catch (e) {
       return { success: false, msg: e.message || e.toString() };

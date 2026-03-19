@@ -6,7 +6,16 @@
 
 import { ipcBridge } from '@/common';
 import type { IChatConversationRefer, TChatConversation } from '@/common/storage';
-import { CLOUD_BACKUP_SCHEMA_VERSION, MANAGED_CLOUD_BACKUP_FILE_PATTERN, type IBackupConnectionResult, type IBackupManifest, type IBackupTaskEvent, type ICloudBackupSettings, type IRemoteBackupFile, type TBackupTaskKind } from '@/common/types/backup';
+import {
+  CLOUD_BACKUP_SCHEMA_VERSION,
+  MANAGED_CLOUD_BACKUP_FILE_PATTERN,
+  type IBackupConnectionResult,
+  type IBackupManifest,
+  type IBackupTaskEvent,
+  type ICloudBackupSettings,
+  type IRemoteBackupFile,
+  type TBackupTaskKind,
+} from '@/common/types/backup';
 import { isCloudBackupConfigured, normalizeCloudBackupConfig } from '@/common/utils/backup';
 import { closeDatabase, getDatabase } from '@/process/database/export';
 import { CURRENT_DB_VERSION } from '@/process/database/schema';
@@ -17,14 +26,28 @@ import JSZip from 'jszip';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import WorkerManage from '@/process/WorkerManage';
+import { workerTaskManager } from '@/process/task/workerTaskManagerSingleton';
 import { copyDirectoryRecursively, ensureDirectory } from '@/process/utils';
 import type { IManagedBackupEntry } from './backupPaths';
-import { filterManagedBackupEntriesByKeys, getBackupPathContext, getCurrentManagedBackupEntries, getManagedBackupEntries } from './backupPaths';
+import {
+  filterManagedBackupEntriesByKeys,
+  getBackupPathContext,
+  getCurrentManagedBackupEntries,
+  getManagedBackupEntries,
+} from './backupPaths';
 import { BackupTaskError, getBackupErrorCode, isAbortLikeError } from './BackupTaskError';
-import { confirmPendingRestoreRecovery, markPendingRestoreRecoveryForVerification, preparePendingRestoreRecovery } from './restoreRecovery';
+import {
+  confirmPendingRestoreRecovery,
+  markPendingRestoreRecoveryForVerification,
+  preparePendingRestoreRecovery,
+} from './restoreRecovery';
 import { CloudWebDavClient } from './WebDavClient';
-import { collectManagedWorkspaceRelativePaths, getManagedWorkspaceRelativePath, normalizeManagedWorkspaceRelativePath, remapConversationExtraPaths } from './workspaceBackup';
+import {
+  collectManagedWorkspaceRelativePaths,
+  getManagedWorkspaceRelativePath,
+  normalizeManagedWorkspaceRelativePath,
+  remapConversationExtraPaths,
+} from './workspaceBackup';
 
 interface IManagedWorkspaceDirectory {
   relativePath: string;
@@ -133,7 +156,11 @@ function buildWorkspacePayloadPath(payloadRoot: string, relativePath: string): s
   return path.join(payloadRoot, 'payload', 'workspaces', ...relativePath.split('/').filter(Boolean));
 }
 
-async function runWithConcurrencyLimit<T>(items: T[], concurrency: number, task: (item: T) => Promise<void>): Promise<void> {
+async function runWithConcurrencyLimit<T>(
+  items: T[],
+  concurrency: number,
+  task: (item: T) => Promise<void>
+): Promise<void> {
   const normalizedConcurrency = Math.max(1, Math.floor(concurrency));
   let nextIndex = 0;
 
@@ -180,7 +207,14 @@ function resolveSafeZipEntryOutputPath(targetDir: string, entryName: string): st
   }
 
   const normalizedEntryName = path.posix.normalize(portableEntryName);
-  if (!normalizedEntryName || normalizedEntryName === '.' || normalizedEntryName === '..' || normalizedEntryName.startsWith('../') || /^[a-zA-Z]:/.test(normalizedEntryName) || normalizedEntryName.includes('\0')) {
+  if (
+    !normalizedEntryName ||
+    normalizedEntryName === '.' ||
+    normalizedEntryName === '..' ||
+    normalizedEntryName.startsWith('../') ||
+    /^[a-zA-Z]:/.test(normalizedEntryName) ||
+    normalizedEntryName.includes('\0')
+  ) {
     throw new Error('Backup package contains unsafe file paths.');
   }
 
@@ -238,7 +272,12 @@ export class BackupService {
     return true;
   }
 
-  async runRemoteBackup(settings: ICloudBackupSettings, fileName?: string, automatic = false, requestId?: string): Promise<IRemoteBackupFile> {
+  async runRemoteBackup(
+    settings: ICloudBackupSettings,
+    fileName?: string,
+    automatic = false,
+    requestId?: string
+  ): Promise<IRemoteBackupFile> {
     return this.runExclusive('backup', async () => {
       this.assertSettings(settings);
       const client = new CloudWebDavClient(normalizeCloudBackupConfig(settings));
@@ -254,26 +293,63 @@ export class BackupService {
       this.currentRequestId = finalRequestId;
 
       try {
-        this.emitTask({ task: 'backup', phase: 'connecting', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
+        this.emitTask({
+          task: 'backup',
+          phase: 'connecting',
+          automatic,
+          fileName: finalFileName,
+          requestId: finalRequestId,
+          cancellable: true,
+        });
         await client.checkConnection(signal);
         await client.ensureDirectory(signal);
         this.assertNotCanceled(signal);
 
-        this.emitTask({ task: 'backup', phase: 'snapshotting', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
+        this.emitTask({
+          task: 'backup',
+          phase: 'snapshotting',
+          automatic,
+          fileName: finalFileName,
+          requestId: finalRequestId,
+          cancellable: true,
+        });
         await this.createDatabaseSnapshot(dbSnapshotPath);
         this.assertNotCanceled(signal);
 
         const entries = getManagedBackupEntries(dbSnapshotPath);
-        this.emitTask({ task: 'backup', phase: 'collecting', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
-        const workspaceDirectories = settings.includeDefaultWorkspaceFiles ? await this.collectDefaultWorkspaceDirectories(signal) : [];
+        this.emitTask({
+          task: 'backup',
+          phase: 'collecting',
+          automatic,
+          fileName: finalFileName,
+          requestId: finalRequestId,
+          cancellable: true,
+        });
+        const workspaceDirectories = settings.includeDefaultWorkspaceFiles
+          ? await this.collectDefaultWorkspaceDirectories(signal)
+          : [];
         const manifest = await this.buildManifest(settings, finalFileName, entries, workspaceDirectories);
         this.assertNotCanceled(signal);
 
-        this.emitTask({ task: 'backup', phase: 'packaging', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
+        this.emitTask({
+          task: 'backup',
+          phase: 'packaging',
+          automatic,
+          fileName: finalFileName,
+          requestId: finalRequestId,
+          cancellable: true,
+        });
         const zipBuffer = await this.buildBackupArchive(entries, workspaceDirectories, manifest, signal);
         this.assertNotCanceled(signal);
 
-        this.emitTask({ task: 'backup', phase: 'uploading', automatic, fileName: finalFileName, requestId: finalRequestId, cancellable: true });
+        this.emitTask({
+          task: 'backup',
+          phase: 'uploading',
+          automatic,
+          fileName: finalFileName,
+          requestId: finalRequestId,
+          cancellable: true,
+        });
         await client.uploadFile(finalFileName, zipBuffer, signal);
         remoteFileUploaded = true;
         this.assertNotCanceled(signal);
@@ -284,7 +360,16 @@ export class BackupService {
           size: zipBuffer.byteLength,
           modifiedTime: new Date().toISOString(),
         };
-        this.emitTask({ task: 'backup', phase: 'success', automatic, fileName: finalFileName, fileSize: result.size, message: finalFileName, requestId: finalRequestId, cancellable: false });
+        this.emitTask({
+          task: 'backup',
+          phase: 'success',
+          automatic,
+          fileName: finalFileName,
+          fileSize: result.size,
+          message: finalFileName,
+          requestId: finalRequestId,
+          cancellable: false,
+        });
         return result;
       } catch (error) {
         const normalizedError = this.normalizeTaskError(error);
@@ -337,7 +422,11 @@ export class BackupService {
     }
   }
 
-  async restoreRemotePackage(settings: ICloudBackupSettings, fileName: string, requestId?: string): Promise<{ fileName: string; restartRequired: boolean; manifest: IBackupManifest }> {
+  async restoreRemotePackage(
+    settings: ICloudBackupSettings,
+    fileName: string,
+    requestId?: string
+  ): Promise<{ fileName: string; restartRequired: boolean; manifest: IBackupManifest }> {
     return this.runExclusive('restore', async () => {
       this.assertSettings(settings);
       if (!MANAGED_CLOUD_BACKUP_FILE_PATTERN.test(fileName)) {
@@ -357,7 +446,13 @@ export class BackupService {
       this.currentRequestId = finalRequestId;
 
       try {
-        this.emitTask({ task: 'restore', phase: 'downloading', fileName, requestId: finalRequestId, cancellable: true });
+        this.emitTask({
+          task: 'restore',
+          phase: 'downloading',
+          fileName,
+          requestId: finalRequestId,
+          cancellable: true,
+        });
         const archiveBuffer = await client.downloadFile(fileName, signal);
         this.assertNotCanceled(signal);
 
@@ -369,13 +464,18 @@ export class BackupService {
         this.emitTask({ task: 'restore', phase: 'restoring', fileName, requestId: finalRequestId, cancellable: false });
         this.currentAbortController = null;
 
-        WorkerManage.clear();
+        workerTaskManager.clear();
         closeDatabase();
 
         await this.createRollbackSnapshot(restoreEntries, rollbackDir);
         await this.createWorkspaceRollbackSnapshot(manifest.defaultWorkspaceFiles.relativeRoots, rollbackDir);
         try {
-          await preparePendingRestoreRecovery(restoreEntries, manifest.defaultWorkspaceFiles.relativeRoots, fileName, manifest.sourcePlatform);
+          await preparePendingRestoreRecovery(
+            restoreEntries,
+            manifest.defaultWorkspaceFiles.relativeRoots,
+            fileName,
+            manifest.sourcePlatform
+          );
           pendingRecoveryPrepared = true;
         } catch (prepareError) {
           await confirmPendingRestoreRecovery().catch((): void => undefined);
@@ -398,7 +498,14 @@ export class BackupService {
           }
           throw restoreError;
         }
-        this.emitTask({ task: 'restore', phase: 'success', fileName, message: fileName, requestId: finalRequestId, cancellable: false });
+        this.emitTask({
+          task: 'restore',
+          phase: 'success',
+          fileName,
+          message: fileName,
+          requestId: finalRequestId,
+          cancellable: false,
+        });
         return { fileName, restartRequired: true, manifest };
       } catch (error) {
         const normalizedError = this.normalizeTaskError(error);
@@ -493,7 +600,12 @@ export class BackupService {
     return `${suggested.replace(/\.zip$/i, '')}_${sanitizeFileNamePart(sanitized, 'backup', 72)}.zip`;
   }
 
-  private async buildManifest(settings: ICloudBackupSettings, fileName: string, entries: IManagedBackupEntry[], workspaceDirectories: IManagedWorkspaceDirectory[]): Promise<IBackupManifest> {
+  private async buildManifest(
+    settings: ICloudBackupSettings,
+    fileName: string,
+    entries: IManagedBackupEntry[],
+    workspaceDirectories: IManagedWorkspaceDirectory[]
+  ): Promise<IBackupManifest> {
     const context = getBackupPathContext();
     const includedSections = await Promise.all(
       entries.map(async (entry) => ({
@@ -528,7 +640,12 @@ export class BackupService {
     };
   }
 
-  private async buildBackupArchive(entries: IManagedBackupEntry[], workspaceDirectories: IManagedWorkspaceDirectory[], manifest: IBackupManifest, signal?: AbortSignal): Promise<Buffer> {
+  private async buildBackupArchive(
+    entries: IManagedBackupEntry[],
+    workspaceDirectories: IManagedWorkspaceDirectory[],
+    manifest: IBackupManifest,
+    signal?: AbortSignal
+  ): Promise<Buffer> {
     const zip = new JSZip();
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
 
@@ -551,7 +668,11 @@ export class BackupService {
         continue;
       }
 
-      await addDirectoryToZip(zip, workspaceDirectory.sourcePath, buildWorkspaceZipPath(workspaceDirectory.relativePath));
+      await addDirectoryToZip(
+        zip,
+        workspaceDirectory.sourcePath,
+        buildWorkspaceZipPath(workspaceDirectory.relativePath)
+      );
     }
 
     this.assertNotCanceled(signal);
@@ -564,7 +685,12 @@ export class BackupService {
     return buffer;
   }
 
-  private async cleanupRemoteBackups(client: CloudWebDavClient, maxBackupCount: number, preservedFileName?: string, signal?: AbortSignal): Promise<void> {
+  private async cleanupRemoteBackups(
+    client: CloudWebDavClient,
+    maxBackupCount: number,
+    preservedFileName?: string,
+    signal?: AbortSignal
+  ): Promise<void> {
     if (maxBackupCount <= 0) {
       return;
     }
@@ -607,12 +733,19 @@ export class BackupService {
     const manifest = JSON.parse(await manifestEntry.async('string')) as IBackupManifest;
     const rawRelativeRoots = manifest.defaultWorkspaceFiles?.relativeRoots || [];
     const normalizedRelativeRoots = rawRelativeRoots.map((item) => normalizeManagedWorkspaceRelativePath(item));
-    const managedEntryKeys = Array.isArray(manifest.managedEntryKeys) && manifest.managedEntryKeys.length > 0 ? manifest.managedEntryKeys.filter((item): item is string => typeof item === 'string') : (manifest.includedSections || []).filter((item): item is string => typeof item === 'string' && item !== 'defaultWorkspaceFiles');
+    const managedEntryKeys =
+      Array.isArray(manifest.managedEntryKeys) && manifest.managedEntryKeys.length > 0
+        ? manifest.managedEntryKeys.filter((item): item is string => typeof item === 'string')
+        : (manifest.includedSections || []).filter(
+            (item): item is string => typeof item === 'string' && item !== 'defaultWorkspaceFiles'
+          );
     if (manifest.backupSchemaVersion !== CLOUD_BACKUP_SCHEMA_VERSION) {
       throw new Error('Unsupported backup schema version.');
     }
     if (manifest.dbVersion > CURRENT_DB_VERSION) {
-      throw new Error(`Backup database version ${manifest.dbVersion} is newer than supported version ${CURRENT_DB_VERSION}.`);
+      throw new Error(
+        `Backup database version ${manifest.dbVersion} is newer than supported version ${CURRENT_DB_VERSION}.`
+      );
     }
     if (!zip.file('payload/db/aionui.db')) {
       throw new Error('Backup database payload is missing.');
@@ -628,12 +761,16 @@ export class BackupService {
     manifest.managedEntryKeys = managedEntryKeys;
 
     const declaredManagedEntries = filterManagedBackupEntriesByKeys(getCurrentManagedBackupEntries(), managedEntryKeys);
-    const missingManagedPayloads = declaredManagedEntries.filter((entry) => !hasZipPayload(zip, entry.zipPath, entry.type)).map((entry) => entry.key);
+    const missingManagedPayloads = declaredManagedEntries
+      .filter((entry) => !hasZipPayload(zip, entry.zipPath, entry.type))
+      .map((entry) => entry.key);
     if (missingManagedPayloads.length > 0) {
       throw new Error(`Backup payload is missing for managed entries: ${missingManagedPayloads.join(', ')}`);
     }
 
-    const missingWorkspacePayloads = manifest.defaultWorkspaceFiles.relativeRoots.filter((relativeRoot) => !hasZipPayload(zip, buildWorkspaceZipPath(relativeRoot), 'directory'));
+    const missingWorkspacePayloads = manifest.defaultWorkspaceFiles.relativeRoots.filter(
+      (relativeRoot) => !hasZipPayload(zip, buildWorkspaceZipPath(relativeRoot), 'directory')
+    );
     if (missingWorkspacePayloads.length > 0) {
       throw new Error(`Backup workspace payload is missing for: ${missingWorkspacePayloads.join(', ')}`);
     }
@@ -661,7 +798,10 @@ export class BackupService {
 
     const unresolvedEntryKeys = manifestEntryKeys.filter((key) => !restoreEntries.some((entry) => entry.key === key));
     if (unresolvedEntryKeys.length > 0) {
-      console.warn('[BackupService] Backup manifest contains managed entries that are not recognized by the current application:', unresolvedEntryKeys);
+      console.warn(
+        '[BackupService] Backup manifest contains managed entries that are not recognized by the current application:',
+        unresolvedEntryKeys
+      );
     }
 
     return restoreEntries;
@@ -819,14 +959,22 @@ export class BackupService {
     if (await exists(dbPath)) {
       const sqlite = new BetterSqlite3(dbPath);
       try {
-        const conversationRows = sqlite.prepare('SELECT id, extra FROM conversations').all() as Array<{ id: string; extra: string }>;
+        const conversationRows = sqlite.prepare('SELECT id, extra FROM conversations').all() as Array<{
+          id: string;
+          extra: string;
+        }>;
         const updateConversation = sqlite.prepare('UPDATE conversations SET extra = ? WHERE id = ?');
         const conversationUpdates: Array<{ id: string; extra: string }> = [];
 
         for (const row of conversationRows) {
           try {
             const extra = JSON.parse(row.extra) as Record<string, unknown>;
-            const relativeRoot = getManagedWorkspaceRelativePath(typeof extra.workspace === 'string' ? extra.workspace : undefined, sourceWorkDir, manifest.sourcePlatform, typeof extra.customWorkspace === 'boolean' ? extra.customWorkspace : undefined);
+            const relativeRoot = getManagedWorkspaceRelativePath(
+              typeof extra.workspace === 'string' ? extra.workspace : undefined,
+              sourceWorkDir,
+              manifest.sourcePlatform,
+              typeof extra.customWorkspace === 'boolean' ? extra.customWorkspace : undefined
+            );
             if (relativeRoot) {
               remappedRelativeRoots.add(relativeRoot);
             }
@@ -850,9 +998,14 @@ export class BackupService {
           transaction(conversationUpdates);
         }
 
-        const sessionTable = sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assistant_sessions'").get() as { name?: string } | undefined;
+        const sessionTable = sqlite
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assistant_sessions'")
+          .get() as { name?: string } | undefined;
         if (sessionTable?.name) {
-          const sessionRows = sqlite.prepare('SELECT id, workspace FROM assistant_sessions').all() as Array<{ id: string; workspace: string | null }>;
+          const sessionRows = sqlite.prepare('SELECT id, workspace FROM assistant_sessions').all() as Array<{
+            id: string;
+            workspace: string | null;
+          }>;
           const updateSession = sqlite.prepare('UPDATE assistant_sessions SET workspace = ? WHERE id = ?');
           const sessionUpdates: Array<{ id: string; workspace: string }> = [];
 
@@ -866,7 +1019,12 @@ export class BackupService {
               remappedRelativeRoots.add(relativeRoot);
             }
 
-            const mappedWorkspace = remapConversationExtraPaths({ workspace: row.workspace }, sourceWorkDir, targetWorkDir, manifest.sourcePlatform).value as { workspace: string };
+            const mappedWorkspace = remapConversationExtraPaths(
+              { workspace: row.workspace },
+              sourceWorkDir,
+              targetWorkDir,
+              manifest.sourcePlatform
+            ).value as { workspace: string };
             if (mappedWorkspace.workspace !== row.workspace) {
               sessionUpdates.push({
                 id: row.id,
@@ -894,7 +1052,10 @@ export class BackupService {
     }
   }
 
-  private async rewriteLegacyConversationWorkspacePaths(manifest: IBackupManifest, remappedRelativeRoots: Set<string>): Promise<void> {
+  private async rewriteLegacyConversationWorkspacePaths(
+    manifest: IBackupManifest,
+    remappedRelativeRoots: Set<string>
+  ): Promise<void> {
     const sourceWorkDir = manifest.sourceSystemDirs.workDir;
     const context = getBackupPathContext();
     const chatFilePath = path.join(context.cacheDir, 'aionui-chat.txt');
@@ -921,12 +1082,22 @@ export class BackupService {
     let changed = false;
     const history = parsed['chat.history'].map((conversation) => {
       const extra = conversation.extra as Record<string, unknown> | undefined;
-      const relativeRoot = getManagedWorkspaceRelativePath(typeof extra?.workspace === 'string' ? extra.workspace : undefined, sourceWorkDir, manifest.sourcePlatform, typeof extra?.customWorkspace === 'boolean' ? extra.customWorkspace : undefined);
+      const relativeRoot = getManagedWorkspaceRelativePath(
+        typeof extra?.workspace === 'string' ? extra.workspace : undefined,
+        sourceWorkDir,
+        manifest.sourcePlatform,
+        typeof extra?.customWorkspace === 'boolean' ? extra.customWorkspace : undefined
+      );
       if (relativeRoot) {
         remappedRelativeRoots.add(relativeRoot);
       }
 
-      const remapped = remapConversationExtraPaths(conversation.extra, sourceWorkDir, context.workDir, manifest.sourcePlatform);
+      const remapped = remapConversationExtraPaths(
+        conversation.extra,
+        sourceWorkDir,
+        context.workDir,
+        manifest.sourcePlatform
+      );
       if (!remapped.changed) {
         return conversation;
       }
@@ -980,7 +1151,11 @@ export class BackupService {
     if (/Unsupported backup file/i.test(message)) {
       return new BackupTaskError('unsupported_file', message);
     }
-    if (/manifest|schema version|payload is missing|database version|default workspace metadata is invalid|unsafe file paths/i.test(message)) {
+    if (
+      /manifest|schema version|payload is missing|database version|default workspace metadata is invalid|unsafe file paths/i.test(
+        message
+      )
+    ) {
       return new BackupTaskError('package_invalid', message);
     }
 

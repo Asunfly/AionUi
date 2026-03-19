@@ -44,7 +44,8 @@ async function getAllDatabaseConversations(): Promise<TChatConversation[]> {
 
 function getManagedWorkspacePath(conversation: TChatConversation | undefined): string | null {
   const workspace = getConversationWorkspace(conversation);
-  const customWorkspace = typeof conversation?.extra?.customWorkspace === 'boolean' ? conversation.extra.customWorkspace : undefined;
+  const customWorkspace =
+    typeof conversation?.extra?.customWorkspace === 'boolean' ? conversation.extra.customWorkspace : undefined;
   const workDir = getSystemDir().workDir;
 
   if (!workspace) {
@@ -59,13 +60,19 @@ function getManagedWorkspacePath(conversation: TChatConversation | undefined): s
   return path.join(workDir, ...relativeRoot.split('/').filter(Boolean));
 }
 
-async function getWorkspaceToDelete(conversationId: string, candidateWorkspacePath: string | null): Promise<string | null> {
+async function getWorkspaceToDelete(
+  conversationId: string,
+  candidateWorkspacePath: string | null
+): Promise<string | null> {
   if (!candidateWorkspacePath) {
     return null;
   }
 
   const normalizedCandidatePath = normalizeWorkspacePath(candidateWorkspacePath);
-  const [dbConversations, legacyConversations] = await Promise.all([getAllDatabaseConversations(), getLegacyConversations()]);
+  const [dbConversations, legacyConversations] = await Promise.all([
+    getAllDatabaseConversations(),
+    getLegacyConversations(),
+  ]);
 
   const hasConversationReference = [...dbConversations, ...legacyConversations].some((item) => {
     if (item.id === conversationId) {
@@ -88,7 +95,10 @@ async function getWorkspaceToDelete(conversationId: string, candidateWorkspacePa
         return false;
       }
 
-      const sessionWorkspace = typeof (session as { workspace?: string | null }).workspace === 'string' ? (session as { workspace: string }).workspace : null;
+      const sessionWorkspace =
+        typeof (session as { workspace?: string | null }).workspace === 'string'
+          ? (session as { workspace: string }).workspace
+          : null;
       return sessionWorkspace ? normalizeWorkspacePath(sessionWorkspace) === normalizedCandidatePath : false;
     });
 

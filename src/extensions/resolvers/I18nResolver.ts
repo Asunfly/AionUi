@@ -8,7 +8,7 @@
  * Extension i18n resolver.
  *
  * Loads translation files from extension `i18n/` directories following the same
- * structure as `src/renderer/i18n/locales/`:
+ * structure as `src/renderer/services/i18n/locales/`:
  *
  *   i18n/{locale}/{module}.json
  *
@@ -76,7 +76,10 @@ export async function loadExtensionLocales(ext: LoadedExtension): Promise<Extens
       }
     }
   } catch (error) {
-    console.warn(`[Extensions] Failed to read i18n directory for ${ext.manifest.name}:`, error instanceof Error ? error.message : error);
+    console.warn(
+      `[Extensions] Failed to read i18n directory for ${ext.manifest.name}:`,
+      error instanceof Error ? error.message : error
+    );
   }
 
   return result;
@@ -114,7 +117,10 @@ async function loadLocaleDir(localeDir: string): Promise<Record<string, unknown>
       }
     }
   } catch (error) {
-    console.warn(`[Extensions] Failed to read locale directory ${localeDir}:`, error instanceof Error ? error.message : error);
+    console.warn(
+      `[Extensions] Failed to read locale directory ${localeDir}:`,
+      error instanceof Error ? error.message : error
+    );
   }
 
   return modules;
@@ -159,7 +165,11 @@ export async function resolveExtensionI18n(extensions: LoadedExtension[]): Promi
  *
  * Falls back to `defaultLocale` (usually 'en-US') for missing keys.
  */
-export function getExtI18nForLocale(aggregated: AggregatedExtI18n, locale: string, defaultLocale = 'en-US'): Record<string, unknown> {
+export function getExtI18nForLocale(
+  aggregated: AggregatedExtI18n,
+  locale: string,
+  defaultLocale = 'en-US'
+): Record<string, unknown> {
   const fallback = aggregated[defaultLocale] ?? {};
   const target = aggregated[locale] ?? {};
 

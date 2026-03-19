@@ -97,7 +97,10 @@ function loadShellEnvironment(): Record<string, string> {
     }
   } catch (error) {
     // Silent fail - shell environment loading is best-effort
-    console.warn('[ShellEnv] Failed to load shell environment:', error instanceof Error ? error.message : String(error));
+    console.warn(
+      '[ShellEnv] Failed to load shell environment:',
+      error instanceof Error ? error.message : String(error)
+    );
   }
 
   if (PERF_LOG) console.log(`[ShellEnv] connect: shell env loaded ${Date.now() - startTime}ms`);
@@ -167,7 +170,10 @@ export async function loadShellEnvironmentAsync(): Promise<Record<string, string
     if (PERF_LOG) console.log(`[ShellEnv] preload: shell env async loaded ${Date.now() - startTime}ms`);
   } catch (error) {
     cachedShellEnv = {};
-    console.warn('[ShellEnv] Failed to async load shell environment:', error instanceof Error ? error.message : String(error));
+    console.warn(
+      '[ShellEnv] Failed to async load shell environment:',
+      error instanceof Error ? error.message : String(error)
+    );
   }
 
   return cachedShellEnv;
@@ -400,6 +406,10 @@ function parseEnvOutput(output: string): Record<string, string> {
   return result;
 }
 
+export function getWindowsShellExecutionOptions(): { shell?: boolean; windowsHide?: boolean } {
+  return process.platform === 'win32' ? { shell: true, windowsHide: true } : {};
+}
+
 /**
  * Resolve a modern npx binary (npm >= 7) from the same directory as the
  * active node binary.  Old standalone npx packages (npm v5/v6 era) don't
@@ -419,17 +429,40 @@ export function resolveNpxPath(env: Record<string, string | undefined>): string 
       encoding: 'utf-8',
       timeout: 5000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...getWindowsShellExecutionOptions(),
     })
       .trim()
-      .split('\n')[0]; // `where` on Windows may return multiple lines
+      .split(/\r?\n/)[0]; // `where` on Windows may return multiple lines
     const npxCandidate = path.join(path.dirname(nodePath), npxName);
-    // Verify the candidate exists AND is modern (npm >= 7 bundles npx >= 7)
-    const versionOutput = execFileSync(npxCandidate, ['--version'], {
-      env,
-      encoding: 'utf-8',
-      timeout: 5000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
+
+    let versionOutput = '';
+    if (isWindows) {
+      // Packaged Windows builds may resolve a bundled node.exe whose sibling
+      // npx.cmd exists, but its bundled npm JS files are missing. Probe the
+      // npm entrypoint JS directly so we only trust a complete Node+npm install.
+      const npmBinDir = path.join(path.dirname(nodePath), 'node_modules', 'npm', 'bin');
+      const npmPrefixJs = path.join(npmBinDir, 'npm-prefix.js');
+      const npxCliJs = path.join(npmBinDir, 'npx-cli.js');
+      if (!existsSync(npxCandidate) || !existsSync(npmPrefixJs) || !existsSync(npxCliJs)) {
+        throw new Error('Node-adjacent npx.cmd or bundled npm scripts are missing');
+      }
+      versionOutput = execFileSync(nodePath, [npxCliJs, '--version'], {
+        env,
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      }).trim();
+    } else {
+      // Verify the candidate exists AND is modern (npm >= 7 bundles npx >= 7)
+      versionOutput = execFileSync(npxCandidate, ['--version'], {
+        env,
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    }
+
     const majorVersion = parseInt(versionOutput.split('.')[0], 10);
     if (majorVersion >= 7) {
       return npxCandidate;
@@ -514,6 +547,9 @@ export function logEnvironmentDiagnostics(): void {
  * - POSIX:   ~/.npm/_npx
  */
 export function getNpxCacheDir(): string {
-  const npmCacheBase = process.platform === 'win32' ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'npm-cache') : path.join(os.homedir(), '.npm');
+  const npmCacheBase =
+    process.platform === 'win32'
+      ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'npm-cache')
+      : path.join(os.homedir(), '.npm');
   return path.join(npmCacheBase, '_npx');
 }

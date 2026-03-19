@@ -8,9 +8,9 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IBackupTaskEvent, ICloudBackupSettings } from '../../src/common/types/backup';
-import CloudBackupRemarkModal from '../../src/renderer/components/SettingsModal/contents/CloudBackupRemarkModal';
-import CloudBackupRestoreModal from '../../src/renderer/components/SettingsModal/contents/CloudBackupRestoreModal';
-import CloudBackupRestoreProgressModal from '../../src/renderer/components/SettingsModal/contents/CloudBackupRestoreProgressModal';
+import CloudBackupRemarkModal from '../../src/renderer/components/settings/SettingsModal/contents/CloudBackupRemarkModal';
+import CloudBackupRestoreModal from '../../src/renderer/components/settings/SettingsModal/contents/CloudBackupRestoreModal';
+import CloudBackupRestoreProgressModal from '../../src/renderer/components/settings/SettingsModal/contents/CloudBackupRestoreProgressModal';
 
 const modalMocks = vi.hoisted(() => ({
   getSuggestedCloudBackupFileName: vi.fn(),
@@ -77,10 +77,21 @@ describe('cloud backup modals', () => {
   });
 
   it('prefills the filename input and starts a manual backup with a request id', async () => {
-    modalMocks.getSuggestedCloudBackupFileName.mockResolvedValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip');
+    modalMocks.getSuggestedCloudBackupFileName.mockResolvedValue(
+      'AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip'
+    );
 
     const onStart = vi.fn().mockResolvedValue(undefined);
-    render(<CloudBackupRemarkModal visible settings={settings} taskEvent={null} onClose={() => undefined} onStart={onStart} onCancelTask={vi.fn()} />);
+    render(
+      <CloudBackupRemarkModal
+        visible
+        settings={settings}
+        taskEvent={null}
+        onClose={() => undefined}
+        onStart={onStart}
+        onCancelTask={vi.fn()}
+      />
+    );
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip')).toBeInTheDocument();
@@ -94,12 +105,23 @@ describe('cloud backup modals', () => {
   });
 
   it('shows running steps, supports cancel, and auto-closes after success', async () => {
-    modalMocks.getSuggestedCloudBackupFileName.mockResolvedValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip');
+    modalMocks.getSuggestedCloudBackupFileName.mockResolvedValue(
+      'AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip'
+    );
 
     const onClose = vi.fn();
     const onStart = vi.fn().mockResolvedValue(undefined);
     const onCancelTask = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = render(<CloudBackupRemarkModal visible settings={settings} taskEvent={null} onClose={onClose} onStart={onStart} onCancelTask={onCancelTask} />);
+    const { rerender } = render(
+      <CloudBackupRemarkModal
+        visible
+        settings={settings}
+        taskEvent={null}
+        onClose={onClose}
+        onStart={onStart}
+        onCancelTask={onCancelTask}
+      />
+    );
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip')).toBeInTheDocument();
@@ -159,7 +181,9 @@ describe('cloud backup modals', () => {
     );
 
     expect(screen.getByText('settings.backup.successTitle')).toBeInTheDocument();
-    expect(screen.queryByDisplayValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip')).not.toBeInTheDocument();
+    expect(
+      screen.queryByDisplayValue('AionUi_v1.8.23_20260308-101010_ABC123_win32-x64_HOST.zip')
+    ).not.toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10000);
     });
@@ -192,7 +216,9 @@ describe('cloud backup modals', () => {
       expect(modalMocks.listCloudRemotePackages).toHaveBeenCalledTimes(2);
     });
 
-    const secondOption = screen.getByText('AionUi_v1.8.23_20260306-154530_DEF456_win32-x64_HOST_B.zip').closest('button');
+    const secondOption = screen
+      .getByText('AionUi_v1.8.23_20260306-154530_DEF456_win32-x64_HOST_B.zip')
+      .closest('button');
     expect(secondOption).not.toBeNull();
     fireEvent.click(secondOption!);
 
@@ -232,7 +258,18 @@ describe('cloud backup modals', () => {
     const onClose = vi.fn();
     const onCancelTask = vi.fn().mockResolvedValue(undefined);
 
-    const { rerender } = render(<CloudBackupRestoreProgressModal visible fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip' requestId='restore-req' taskEvent={null} currentPlatform='win32' onClose={onClose} onRestart={onRestart} onCancelTask={onCancelTask} />);
+    const { rerender } = render(
+      <CloudBackupRestoreProgressModal
+        visible
+        fileName='AionUi_v1.8.23_20260307-154530_ABC123_win32-x64_HOST_A.zip'
+        requestId='restore-req'
+        taskEvent={null}
+        currentPlatform='win32'
+        onClose={onClose}
+        onRestart={onRestart}
+        onCancelTask={onCancelTask}
+      />
+    );
 
     expect(screen.getByText('preparing')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }));

@@ -24,11 +24,12 @@ vi.mock('@/common/storage', async () => {
   };
 });
 
-vi.mock('@/renderer/shared/agents/presetAssistantResources', () => ({
+vi.mock('@/renderer/utils/model/presetAssistantResources', () => ({
   loadPresetAssistantResources,
 }));
 
-const { buildPresetAssistantParams } = await import('../../src/renderer/pages/conversation/utils/createConversationParams');
+const { buildPresetAssistantParams } =
+  await import('../../src/renderer/pages/conversation/utils/createConversationParams');
 
 describe('createConversationParams', () => {
   beforeEach(() => {

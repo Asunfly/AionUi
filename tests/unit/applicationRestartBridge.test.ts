@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import path from 'path';
+import type { IWorkerTaskManager } from '../../src/process/task/IWorkerTaskManager';
 
 const restartBridgeMocks = vi.hoisted(() => {
   let restartHandler: ((options?: { clearRuntimeState?: boolean }) => Promise<void>) | null = null;
@@ -33,9 +34,12 @@ vi.mock('@/common', () => ({
   ipcBridge: {
     application: {
       restart: {
-        provider: vi.fn((handler: (options?: { clearRuntimeState?: boolean }) => Promise<void>) => restartBridgeMocks.setRestartHandler(handler)),
+        provider: vi.fn((handler: (options?: { clearRuntimeState?: boolean }) => Promise<void>) =>
+          restartBridgeMocks.setRestartHandler(handler)
+        ),
       },
       openDevTools: { provider: vi.fn() },
+      isDevToolsOpened: { provider: vi.fn() },
       systemInfo: { provider: vi.fn() },
       getPath: { provider: vi.fn() },
       updateSystemInfo: { provider: vi.fn() },
@@ -77,12 +81,6 @@ vi.mock('@/process/utils', () => ({
   getTempPath: vi.fn(() => '/mock/temp/aionui'),
 }));
 
-vi.mock('@/process/WorkerManage', () => ({
-  default: {
-    clear: restartBridgeMocks.workerClear,
-  },
-}));
-
 vi.mock('@/process/utils/zoom', () => ({
   getZoomFactor: vi.fn(() => 1),
   setZoomFactor: vi.fn(() => 1),
@@ -101,6 +99,15 @@ vi.mock('fs/promises', () => ({
 }));
 
 describe('applicationBridge restart cleanup', () => {
+  const taskManager: IWorkerTaskManager = {
+    getTask: vi.fn(),
+    getOrBuildTask: vi.fn(),
+    addTask: vi.fn(),
+    kill: vi.fn(),
+    clear: restartBridgeMocks.workerClear,
+    listTasks: vi.fn(() => []),
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     restartBridgeMocks.resetRestartHandler();
@@ -109,7 +116,7 @@ describe('applicationBridge restart cleanup', () => {
   it('clears runtime state before relaunch when requested', async () => {
     const { initApplicationBridge } = await import('../../src/process/bridge/applicationBridge');
 
-    initApplicationBridge();
+    initApplicationBridge(taskManager);
     const restartHandler = restartBridgeMocks.getRestartHandler();
     expect(restartHandler).not.toBeNull();
 
@@ -121,7 +128,10 @@ describe('applicationBridge restart cleanup', () => {
     });
     expect(restartBridgeMocks.clearCache).toHaveBeenCalledTimes(1);
     expect(restartBridgeMocks.removeTemp).toHaveBeenCalledWith('/mock/temp/aionui', { recursive: true, force: true });
-    expect(restartBridgeMocks.removeTemp).toHaveBeenCalledWith(path.join('/mock/cache', 'temp'), { recursive: true, force: true });
+    expect(restartBridgeMocks.removeTemp).toHaveBeenCalledWith(path.join('/mock/cache', 'temp'), {
+      recursive: true,
+      force: true,
+    });
     expect(restartBridgeMocks.relaunch).toHaveBeenCalledTimes(1);
     expect(restartBridgeMocks.exit).toHaveBeenCalledWith(0);
   });
