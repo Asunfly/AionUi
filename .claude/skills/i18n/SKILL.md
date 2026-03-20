@@ -14,10 +14,10 @@ Standards and workflow for internationalization. All user-visible text must use 
 
 ## IMPORTANT: Read Config First
 
-Before doing any i18n work, **always read `src/shared/i18n-config.json`** to get the current list of supported languages and modules. Never assume a fixed number — languages and modules may have been added or removed since this skill was written.
+Before doing any i18n work, **always read `src/common/config/i18n-config.json`** to get the current list of supported languages and modules. Never assume a fixed number — languages and modules may have been added or removed since this skill was written.
 
 ```bash
-cat src/shared/i18n-config.json
+cat src/common/config/i18n-config.json
 ```
 
 This file is the **single source of truth**. All scripts, runtime code, and this workflow depend on it.
@@ -25,7 +25,7 @@ This file is the **single source of truth**. All scripts, runtime code, and this
 ## File Structure
 
 ```
-src/shared/i18n-config.json              # Single source of truth: languages, modules
+src/common/config/i18n-config.json              # Single source of truth: languages, modules
 src/renderer/i18n/
 ├── index.ts                             # i18next configuration
 ├── i18n-keys.d.ts                       # AUTO-GENERATED — do not edit manually
@@ -71,8 +71,8 @@ Inside each module JSON file, keys can be **flat or nested**:
 In code:
 
 ```typescript
-t('common.send')           // flat key in common.json
-t('cron.status.active')    // nested key in cron.json
+t('common.send'); // flat key in common.json
+t('cron.status.active'); // nested key in cron.json
 ```
 
 ### Key Naming Rules
@@ -84,19 +84,19 @@ t('cron.status.active')    // nested key in cron.json
 
 ### Common Suffixes
 
-| Suffix | Usage |
-|--------|-------|
-| `title` | Section/page titles |
-| `placeholder` | Input placeholders |
-| `label` | Form labels |
-| `success` / `error` | Status messages |
-| `confirm` | Confirmation dialogs |
-| `empty` | Empty state messages |
-| `tooltip` | Tooltip text |
+| Suffix              | Usage                |
+| ------------------- | -------------------- |
+| `title`             | Section/page titles  |
+| `placeholder`       | Input placeholders   |
+| `label`             | Form labels          |
+| `success` / `error` | Status messages      |
+| `confirm`           | Confirmation dialogs |
+| `empty`             | Empty state messages |
+| `tooltip`           | Tooltip text         |
 
 ## Adding New Text — Workflow
 
-### Step 1: Read `src/shared/i18n-config.json`
+### Step 1: Read `src/common/config/i18n-config.json`
 
 Get the current language list and module list. Do not skip this step.
 
@@ -140,7 +140,7 @@ node scripts/check-i18n.js  # Validate completeness
 
 ## Adding a New Module
 
-1. Add module name to `src/shared/i18n-config.json` → `modules` array
+1. Add module name to `src/common/config/i18n-config.json` → `modules` array
 2. Create `<module>.json` in **every** locale directory (read `supportedLanguages` to know which)
 3. Add import + export in each locale's `index.ts`
 4. Run `bun run i18n:types` to regenerate type definitions
@@ -192,7 +192,7 @@ Use Trans component for complex markup:
 ```tsx
 import { Trans } from 'react-i18next';
 
-<Trans i18nKey="cron.countdown">
+<Trans i18nKey='cron.countdown'>
   Task <strong>{{ taskName }}</strong> in <span>{{ countdown }}</span>
 </Trans>;
 ```
@@ -201,18 +201,18 @@ import { Trans } from 'react-i18next';
 
 Most terms can be auto-converted from zh-CN, but some need manual review:
 
-| zh-CN | zh-TW | Notes |
-|-------|-------|-------|
-| 视频 | 影片 | Different term |
-| 软件 | 軟體 | Different term |
-| 信息 | 訊息 | Different term |
-| 默认 | 預設 | Different term |
+| zh-CN | zh-TW | Notes          |
+| ----- | ----- | -------------- |
+| 视频  | 影片  | Different term |
+| 软件  | 軟體  | Different term |
+| 信息  | 訊息  | Different term |
+| 默认  | 預設  | Different term |
 
 ## Quick Checklist
 
 Before submitting code with new text:
 
-- [ ] Read `src/shared/i18n-config.json` to get current languages and modules
+- [ ] Read `src/common/config/i18n-config.json` to get current languages and modules
 - [ ] All user-visible text uses `t()` function
 - [ ] New keys added to **every** locale directory in `supportedLanguages`
 - [ ] No hardcoded Chinese/English in JSX
@@ -222,11 +222,11 @@ Before submitting code with new text:
 
 ## Common Mistakes
 
-| Mistake | Correct |
-|---------|---------|
-| Assuming a fixed number of languages | Always read `i18n-config.json` first |
-| Adding key to only some locales | Add to **every** locale in `supportedLanguages` |
-| Editing `i18n-keys.d.ts` manually | Run `bun run i18n:types` to generate |
-| Using `t("New Chat")` | Define key: `t("conversation.newChat")` |
-| Not updating `i18n-config.json` for new module | Update config first, then create files |
+| Mistake                                        | Correct                                              |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| Assuming a fixed number of languages           | Always read `i18n-config.json` first                 |
+| Adding key to only some locales                | Add to **every** locale in `supportedLanguages`      |
+| Editing `i18n-keys.d.ts` manually              | Run `bun run i18n:types` to generate                 |
+| Using `t("New Chat")`                          | Define key: `t("conversation.newChat")`              |
+| Not updating `i18n-config.json` for new module | Update config first, then create files               |
 | Adding module JSON but not updating `index.ts` | Must add import + export in each locale's `index.ts` |

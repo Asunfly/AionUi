@@ -36,16 +36,17 @@ tests/
 
 ## Two Test Environments
 
-| Environment | When | File naming |
-|-------------|------|-------------|
-| `node` (default) | Main process, utilities, services | `*.test.ts` |
-| `jsdom` | DOM/browser-dependent code | `*.dom.test.ts` |
+| Environment      | When                              | File naming     |
+| ---------------- | --------------------------------- | --------------- |
+| `node` (default) | Main process, utilities, services | `*.test.ts`     |
+| `jsdom`          | DOM/browser-dependent code        | `*.dom.test.ts` |
 
 ## Workflow
 
 ### Step 1: Identify What to Test
 
 Before writing tests, list the **riskiest scenarios** first:
+
 - What happens when the dependency returns `undefined` / throws?
 - What happens at boundaries (empty list, max retries, past timestamp)?
 - What is most likely to break in production?
@@ -90,9 +91,9 @@ bun run test:coverage     # Check coverage (before opening a PR)
 
 ### Step 4: Verify Coverage
 
-**Coverage target**: ≥ 80% for all files listed in `vitest.config.ts` → `coverage.include`.
+**Coverage target**: ≥ 80% for all source files matched by `vitest.config.ts` → `coverage.include` (currently `src/**/*.{ts,tsx}` plus a few scripts).
 
-If you added new source files to a feature area, make sure they are included in the coverage config.
+New source files are automatically included in coverage — no manual config changes needed. If a new file is accidentally excluded by a rule in `coverage.exclude`, remove it from the exclude list.
 
 ### Step 5: Update Existing Tests
 
@@ -123,15 +124,15 @@ Before submitting code:
 - [ ] `bun run test` passes
 - [ ] Tests describe **behavior**, not implementation
 - [ ] At least one failure path per describe block
-- [ ] New source files added to `coverage.include` if applicable
+- [ ] New source files are not accidentally excluded by `coverage.exclude`
 - [ ] `bun run test:coverage` meets ≥ 80% target
 
 ## Common Mistakes
 
-| Mistake | Correct |
-|---------|---------|
-| Testing implementation details | Test observable behavior |
-| Only testing happy path | Must include at least one failure path |
-| 5+ expects in one `it()` | Split into separate tests |
-| Skipping tests for "simple" code | Simple code breaks too — test the risky parts |
+| Mistake                           | Correct                                       |
+| --------------------------------- | --------------------------------------------- |
+| Testing implementation details    | Test observable behavior                      |
+| Only testing happy path           | Must include at least one failure path        |
+| 5+ expects in one `it()`          | Split into separate tests                     |
+| Skipping tests for "simple" code  | Simple code breaks too — test the risky parts |
 | Writing tests after saying "done" | Tests are part of "done", not an afterthought |

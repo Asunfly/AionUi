@@ -30,6 +30,7 @@ permissions:
   pull-requests: write
   issues: read
   checks: write
+  id-token: write
 
 env:
   BUN_INSTALL_REGISTRY: 'https://registry.npmjs.org/'
@@ -43,7 +44,7 @@ jobs:
     steps:
       - run: echo "PR closed, cancelling in-progress runs via concurrency."
 
-  # Job 1: Code quality checks (TypeScript, ESLint, Prettier)
+  # Job 1: Code quality checks (TypeScript, Oxlint, Oxfmt)
   code-quality:
     name: Code Quality
     if: github.event_name == 'workflow_dispatch' || (github.event.action != 'edited' && github.event.action != 'closed')
@@ -164,7 +165,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: iOfficeAI/AionUi
+          use_oidc: ${{ secrets.CODECOV_TOKEN == '' }}
           files: coverage/lcov.info
           fail_ci_if_error: false
           verbose: true

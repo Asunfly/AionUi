@@ -28,11 +28,13 @@ Perform a thorough local code review with full project context — reads source 
 If `$ARGUMENTS` is non-empty, use it as the PR number.
 
 Otherwise run:
+
 ```bash
 gh pr view --json number -q .number
 ```
 
 If this also fails (not on a PR branch), abort with:
+
 > No PR number provided and cannot detect one from the current branch. Usage: `/pr-review <pr_number>`
 
 ### Step 2 — Check CI Status
@@ -54,6 +56,7 @@ gh pr view <PR_NUMBER> --json statusCheckRollup \
 （`build-test` 为可选 job，不纳入必检范围。）
 
 **特殊情形：** 满足以下任一条件时，跳过此步骤，直接继续：
+
 - `statusCheckRollup` 为空（CI 从未触发）
 - `statusCheckRollup` 非空，但所有必检 job 均不在列表中（说明 pr-checks.yml 工作流整体未触发，如仅改动 docs/md 文件的 PR）
 
@@ -84,7 +87,6 @@ gh pr view <PR_NUMBER> --json statusCheckRollup \
 - 用户选 **no** → 终止 review，随即询问：
 
   > 是否在 PR #\<PR_NUMBER\> 发表评论，提醒作者修复失败的 CI job？(yes/no)
-
   - 用户选 **yes** → 发布 CI 失败提醒评论（格式见下方"CI 失败提醒评论"节），然后退出
   - 用户选 **no** → 直接退出
 
@@ -125,6 +127,7 @@ git status --porcelain
 ```
 
 If the output is non-empty, abort with:
+
 > Working tree has uncommitted changes. Please commit or stash them before running pr-review.
 
 ### Step 4 — Record Current Branch
@@ -142,6 +145,7 @@ gh pr checkout <PR_NUMBER>
 ```
 
 Save the checked-out branch name:
+
 ```bash
 git branch --show-current
 ```
@@ -151,21 +155,25 @@ git branch --show-current
 Run the following in parallel:
 
 **PR metadata:**
+
 ```bash
 gh pr view <PR_NUMBER> --json title,body,author,labels,headRefName,baseRefName,state,createdAt,updatedAt
 ```
 
 **Full diff (no truncation):**
+
 ```bash
 git diff origin/<baseRefName>...HEAD
 ```
 
 **Changed file list:**
+
 ```bash
 git diff --name-status origin/<baseRefName>...HEAD
 ```
 
 **Existing pr-assess comment (if any):**
+
 ```bash
 gh pr view <PR_NUMBER> --json comments --jq '.comments[] | select(.body | startswith("<!-- pr-assess-bot -->")) | .body'
 ```
@@ -177,16 +185,18 @@ If a pr-assess comment exists, use it as supplementary context (risk signals, ch
 Use the Read tool to read each changed file locally.
 
 **Skip:**
+
 - `*.lock` files
 - Images, fonts
 - `dist/`, `node_modules/`, `.cache/`
 - `*.map`, `*.min.js`, `*.min.css`
 
 **Priority order (read highest priority first):**
+
 1. `src/process/`
-2. `src/channels/`
+2. `src/process/channels/`
 3. `src/common/`
-4. `src/worker/`
+4. `src/process/worker/`
 5. `src/renderer/`
 
 Also read key interface/type definition files imported by the changed files when they provide important context.
@@ -208,7 +218,7 @@ Review dimensions:
 - **测试** — 对照 [testing skill](../testing/SKILL.md) 的标准评估，以下任一情况须指出：
   - 新增功能没有对应测试用例
   - 修改了逻辑但未更新已有相关测试
-  - 新增的源文件未加入 `vitest.config.ts` 的 `coverage.include`
+  - 新增的源文件被 `vitest.config.ts` 的 `coverage.exclude` 意外排除（即本应计入覆盖但被错误排除）
   - 已有测试不符合 testing skill Step 2 的质量规则
 - **可测试性** — 变更后的代码是否仍可独立测试；依赖是否可 mock；
   是否与已有模块保持解耦；能否在不依赖完整运行环境的情况下运行单元测试。
@@ -219,6 +229,7 @@ Review dimensions:
 **只报告真实存在的问题。** 如果某个维度代码没有问题，跳过即可，不要为了显示"有在认真 review"而凑问题。以实际代码为准，有则报告，无则如实说代码干净。方案合理性维度同理——如果方案本身没有问题，如实写"方案合理"即可，不要为了体现"有深度"而刻意挑剔。
 
 For each issue found:
+
 1. Specify file path and line number(s)
 2. Quote the problematic code
 3. Explain why it is an issue
@@ -228,10 +239,11 @@ Use the following report template:
 
 ---
 
-```markdown
+````markdown
 ## Code Review：<PR 标题> (#<PR_NUMBER>)
 
 ### 变更概述
+
 [2–3 句话说明这个 PR 改了什么，影响了哪些模块。]
 
 ---
@@ -251,13 +263,16 @@ Use the following report template:
 **文件**：`path/to/file.ts`，第 N 行
 
 **问题代码**：
+
 ```ts
 // 有问题的代码
 ```
+````
 
 **问题说明**：[说明为什么有问题]
 
 **修复建议**：
+
 ```ts
 // 修复后的代码
 ```
@@ -284,14 +299,15 @@ Use the following report template:
 
 ### 汇总
 
-| # | 严重级别 | 文件 | 问题 |
-|---|---------|------|------|
-| 1 | 🔴 CRITICAL | `file.ts:N` | ... |
-| 2 | 🟠 HIGH | `file.ts:N` | ... |
+| #   | 严重级别    | 文件        | 问题 |
+| --- | ----------- | ----------- | ---- |
+| 1   | 🔴 CRITICAL | `file.ts:N` | ...  |
+| 2   | 🟠 HIGH     | `file.ts:N` | ...  |
 
 ### 结论
 
 [以下三选一：]
+
 - ✅ **批准合并** — 无阻塞性问题
 - ⚠️ **有条件批准** — 存在小问题，处理后可合并
 - ❌ **需要修改** — 存在阻塞性问题，必须先解决
@@ -299,8 +315,10 @@ Use the following report template:
 [一句话说明理由]
 
 ---
-*本报告由本地 `pr-review` skill 生成，包含完整项目上下文，无截断限制。*
-```
+
+_本报告由本地 `pr-review` skill 生成，包含完整项目上下文，无截断限制。_
+
+````
 
 ---
 
@@ -319,9 +337,10 @@ If the user says **yes**:
 1. Check for an existing review comment:
 ```bash
 gh pr view <PR_NUMBER> --json comments --jq '.comments[] | select(.body | startswith("<!-- pr-review-bot -->")) | .databaseId'
-```
+````
 
 2. If a previous comment exists, update it:
+
 ```bash
 gh api repos/{owner}/{repo}/issues/comments/<comment_id> -X PATCH -f body="<!-- pr-review-bot -->
 
@@ -329,6 +348,7 @@ gh api repos/{owner}/{repo}/issues/comments/<comment_id> -X PATCH -f body="<!-- 
 ```
 
 3. If no previous comment exists, create a new one:
+
 ```bash
 gh pr comment <PR_NUMBER> --body "<!-- pr-review-bot -->
 
@@ -338,14 +358,17 @@ gh pr comment <PR_NUMBER> --body "<!-- pr-review-bot -->
 ### Step 10 — Cleanup
 
 Switch back to the original branch:
+
 ```bash
 git checkout <original_branch>
 ```
 
 Ask the user:
+
 > 是否删除本地 PR 分支 `<pr_branch>`？(yes/no)
 
 If yes:
+
 ```bash
 git branch -D <pr_branch>
 ```
