@@ -71,11 +71,15 @@ export default defineConfig(({ mode }) => {
           ? [
               viteStaticCopy({
                 structured: false,
+                // electron-vite builds main process as SSR; viteStaticCopy defaults
+                // to environment: "client" and silently skips non-client environments.
+                environment: 'ssr',
                 targets: [
-                  { src: 'src/process/resources/skills/**', dest: 'skills' },
-                  { src: 'rules/**', dest: 'rules' },
-                  { src: 'src/process/resources/assistant/**', dest: 'assistant' },
-                  { src: 'src/renderer/assets/logos/**', dest: 'static/images' },
+                  // Use single * glob to copy top-level items (directories) with their contents intact.
+                  // Using ** would flatten all nested files into the dest root.
+                  { src: 'src/process/resources/skills/*', dest: 'skills' },
+                  { src: 'src/process/resources/assistant/*', dest: 'assistant' },
+                  { src: 'src/renderer/assets/logos/*', dest: 'static/images' },
                 ],
               }),
             ]
@@ -127,6 +131,7 @@ export default defineConfig(({ mode }) => {
 
     renderer: {
       base: './',
+      publicDir: resolve('public'),
       server: {
         // Keep renderer HTTP port deterministic for Electron runtime URL injection.
         // If 5173 is unavailable, fail fast instead of auto-switching to 5174+,
