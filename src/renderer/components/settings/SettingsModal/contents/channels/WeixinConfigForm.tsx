@@ -12,8 +12,9 @@ import type { GeminiModelSelection } from '@/renderer/pages/conversation/platfor
 import type { AcpBackendAll } from '@/common/types/acpTypes';
 import { Button, Dropdown, Empty, Menu, Message, Spin, Tooltip } from '@arco-design/web-react';
 import { CheckOne, CloseOne, Copy, Delete, Down, Refresh } from '@icon-park/react';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { QRCodeSVG } from 'qrcode.react';
 
 type LoginState = 'idle' | 'loading_qr' | 'showing_qr' | 'scanned' | 'connected';
 
@@ -57,8 +58,13 @@ const formatTime = (timestamp: number) => new Date(timestamp).toLocaleString();
 const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, modelSelection, onStatusChange }) => {
   const { t } = useTranslation();
 
-  const [loginState, setLoginState] = useState<LoginState>(pluginStatus?.hasToken ? 'connected' : 'idle');
+  const [loginState, setLoginState] = useState<LoginState>(
+    pluginStatus?.hasToken && pluginStatus?.enabled ? 'connected' : 'idle'
+  );
+  // In Electron mode this holds a base64 data URL; in WebUI mode it holds the raw QR ticket string.
   const [qrcodeDataUrl, setQrcodeDataUrl] = useState<string | null>(null);
+  const [isWebUIMode, setIsWebUIMode] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   // Pairing state
   const [pairingLoading, setPairingLoading] = useState(false);
@@ -76,9 +82,19 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
     customAgentId?: string;
   }>({ backend: 'gemini' });
 
-  // Sync connected state when pluginStatus changes externally
+  // Close EventSource on unmount to prevent connection leaks.
   useEffect(() => {
-    if (pluginStatus?.hasToken && loginState === 'idle') {
+    return () => {
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
+    };
+  }, []);
+
+  // Sync connected state when pluginStatus changes externally.
+  // Require enabled to be true so that a post-disable pluginStatusChanged event
+  // (which still carries hasToken: true but enabled: false) does not flip back to connected.
+  useEffect(() => {
+    if (pluginStatus?.hasToken && pluginStatus?.enabled && loginState === 'idle') {
       setLoginState('connected');
     }
   }, [pluginStatus, loginState]);
@@ -243,49 +259,103 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
     }
   };
 
+  const enableWeixinPlugin = async (accountId: string, botToken: string) => {
+    const enableResult = await channel.enablePlugin.invoke({
+      pluginId: 'weixin_default',
+      config: { accountId, botToken },
+    });
+    if (enableResult.success) {
+      Message.success(t('settings.weixin.pluginEnabled', 'WeChat channel enabled'));
+      const statusResult = await channel.getPluginStatus.invoke();
+      if (statusResult.success && statusResult.data) {
+        const weixinPlugin = statusResult.data.find((p) => p.type === 'weixin');
+        onStatusChange(weixinPlugin || null);
+      }
+      setLoginState('connected');
+    } else {
+      Message.error(enableResult.msg || t('settings.weixin.enableFailed', 'Failed to enable WeChat plugin'));
+      setLoginState('idle');
+    }
+  };
+
+  const handleLoginWebUI = () => {
+    setIsWebUIMode(true);
+    setLoginState('loading_qr');
+    setQrcodeDataUrl(null);
+
+    const es = new EventSource('/api/channel/weixin/login', { withCredentials: true });
+    eventSourceRef.current = es;
+
+    es.addEventListener('qr', (e: MessageEvent) => {
+      const { qrcodeData } = JSON.parse(e.data) as { qrcodeData: string };
+      setQrcodeDataUrl(qrcodeData);
+      setLoginState('showing_qr');
+    });
+
+    es.addEventListener('scanned', () => {
+      setLoginState('scanned');
+    });
+
+    es.addEventListener('done', (e: MessageEvent) => {
+      es.close();
+      const { accountId, botToken } = JSON.parse(e.data) as { accountId: string; botToken: string };
+      enableWeixinPlugin(accountId, botToken).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        Message.error(msg || t('settings.weixin.enableFailed', 'Failed to enable WeChat plugin'));
+        setLoginState('idle');
+        setQrcodeDataUrl(null);
+      });
+    });
+
+    es.addEventListener('error', (e: MessageEvent) => {
+      es.close();
+      const msg = e.data ? ((JSON.parse(e.data) as { message?: string }).message ?? '') : '';
+      if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('too many')) {
+        Message.warning(t('settings.weixin.loginExpired', 'QR code expired, please try again'));
+      } else {
+        Message.error(t('settings.weixin.loginError', 'WeChat login failed'));
+      }
+      setLoginState('idle');
+      setQrcodeDataUrl(null);
+    });
+
+    es.onerror = () => {
+      es.close();
+      setLoginState('idle');
+      setQrcodeDataUrl(null);
+    };
+  };
+
   const handleLogin = async () => {
+    if (!window.electronAPI?.weixinLoginStart) {
+      handleLoginWebUI();
+      return;
+    }
+
     setLoginState('loading_qr');
     setQrcodeDataUrl(null);
 
     const unsubQR =
-      window.electronAPI?.weixinLoginOnQR?.(({ qrcodeUrl: dataUrl }: { qrcodeUrl: string }) => {
+      window.electronAPI.weixinLoginOnQR?.(({ qrcodeUrl: dataUrl }: { qrcodeUrl: string }) => {
         setQrcodeDataUrl(dataUrl);
         setLoginState('showing_qr');
       }) ?? (() => {});
     const unsubScanned =
-      window.electronAPI?.weixinLoginOnScanned?.(() => {
+      window.electronAPI.weixinLoginOnScanned?.(() => {
         setLoginState('scanned');
       }) ?? (() => {});
     const unsubDone =
-      window.electronAPI?.weixinLoginOnDone?.(() => {
+      window.electronAPI.weixinLoginOnDone?.(() => {
         // credentials come from the Promise resolve — not this event
       }) ?? (() => {});
 
     try {
-      const result = await window.electronAPI?.weixinLoginStart?.();
+      const result = await window.electronAPI.weixinLoginStart();
       const { accountId, botToken } = result as {
         accountId: string;
         botToken: string;
       };
-
-      // Auto-enable the plugin with obtained credentials
-      const enableResult = await channel.enablePlugin.invoke({
-        pluginId: 'weixin_default',
-        config: { accountId, botToken },
-      });
-
-      if (enableResult.success) {
-        Message.success(t('settings.weixin.pluginEnabled', 'WeChat channel enabled'));
-        const statusResult = await channel.getPluginStatus.invoke();
-        if (statusResult.success && statusResult.data) {
-          const weixinPlugin = statusResult.data.find((p) => p.type === 'weixin');
-          onStatusChange(weixinPlugin || null);
-        }
-        setLoginState('connected');
-      } else {
-        Message.error(enableResult.msg || t('settings.weixin.enableFailed', 'Failed to enable WeChat plugin'));
-        setLoginState('idle');
-      }
+      await enableWeixinPlugin(accountId, botToken);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       if (msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('too many')) {
@@ -309,13 +379,39 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
     customAgentId?: string;
   }> = availableAgents.length > 0 ? availableAgents : [{ backend: 'gemini', name: 'Gemini CLI' }];
 
+  const handleDisconnect = async () => {
+    try {
+      const result = await channel.disablePlugin.invoke({ pluginId: 'weixin_default' });
+      if (result.success) {
+        Message.success(t('settings.weixin.pluginDisabled', 'WeChat channel disabled'));
+        onStatusChange(null);
+        setLoginState('idle');
+        setQrcodeDataUrl(null);
+      } else {
+        Message.error(result.msg || t('settings.weixin.disableFailed', 'Failed to disconnect'));
+      }
+    } catch (error) {
+      Message.error(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const renderLoginArea = () => {
-    if (loginState === 'connected' || pluginStatus?.hasToken) {
+    if (loginState === 'connected' || (pluginStatus?.hasToken && pluginStatus?.enabled)) {
       return (
         <div className='flex items-center gap-8px'>
           <CheckOne theme='filled' size={16} className='text-green-500' />
-          <span className='text-14px text-t-primary'>{t('settings.weixin.connected', '已连接')}</span>
+          <span className='text-14px text-t-primary'>{t('settings.weixin.connected', 'Connected')}</span>
           {pluginStatus?.botUsername && <span className='text-12px text-t-tertiary'>({pluginStatus.botUsername})</span>}
+          <Button
+            type='secondary'
+            size='small'
+            status='danger'
+            onClick={() => {
+              void handleDisconnect();
+            }}
+          >
+            {t('settings.weixin.disconnect', 'Disconnect')}
+          </Button>
         </div>
       );
     }
@@ -323,14 +419,21 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
     if (loginState === 'showing_qr' || loginState === 'scanned') {
       return (
         <div className='flex flex-col items-center gap-8px'>
-          {qrcodeDataUrl && <img src={qrcodeDataUrl} alt='WeChat QR code' className='w-160px h-160px rd-8px' />}
+          {qrcodeDataUrl &&
+            (isWebUIMode ? (
+              <QRCodeSVG value={qrcodeDataUrl} size={160} />
+            ) : (
+              <img src={qrcodeDataUrl} alt='WeChat QR code' className='w-160px h-160px rd-8px' />
+            ))}
           {loginState === 'scanned' ? (
             <div className='flex items-center gap-6px text-13px text-t-secondary'>
               <Spin size={14} />
-              <span>{t('settings.weixin.scanned', '已扫码，等待确认...')}</span>
+              <span>{t('settings.weixin.scanned', 'Scanned, waiting for confirmation...')}</span>
             </div>
           ) : (
-            <span className='text-13px text-t-secondary'>{t('settings.weixin.scanPrompt', '请用微信扫描二维码')}</span>
+            <span className='text-13px text-t-secondary'>
+              {t('settings.weixin.scanPrompt', 'Please scan the QR code with WeChat')}
+            </span>
           )}
         </div>
       );
@@ -345,7 +448,7 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
           void handleLogin();
         }}
       >
-        {t('settings.weixin.loginButton', '扫码登录')}
+        {t('settings.weixin.loginButton', 'Scan to Login')}
       </Button>
     );
   };
@@ -354,10 +457,10 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
     <div className='flex flex-col gap-24px'>
       {/* Login / connection status */}
       <PreferenceRow
-        label={t('settings.weixin.accountId', '账号 ID')}
+        label={t('settings.weixin.accountId', 'Account ID')}
         description={
           loginState === 'idle' || loginState === 'loading_qr'
-            ? t('settings.weixin.scanPrompt', '请用微信扫描二维码')
+            ? t('settings.weixin.scanPrompt', 'Please scan the QR code with WeChat')
             : undefined
         }
       >
@@ -366,7 +469,7 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
 
       {/* Agent Selection */}
       <PreferenceRow
-        label={t('settings.weixin.agent', '对话Agent')}
+        label={t('settings.weixin.agent', 'Agent')}
         description={t('settings.weixin.agentDesc', 'Used for WeChat conversations')}
       >
         <Dropdown
@@ -425,13 +528,17 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
 
       {/* Default Model Selection */}
       <PreferenceRow
-        label={t('settings.assistant.defaultModel', '对话模型')}
-        description={t('settings.weixin.defaultModelDesc', '用于Agent对话时调用')}
+        label={t('settings.assistant.defaultModel', 'Default Model')}
+        description={t('settings.weixin.defaultModelDesc', 'Model used for WeChat conversations')}
       >
         <GeminiModelSelector
           selection={isGeminiAgent ? modelSelection : undefined}
           disabled={!isGeminiAgent}
-          label={!isGeminiAgent ? t('settings.assistant.autoFollowCliModel', '自动跟随CLI运行时的模型') : undefined}
+          label={
+            !isGeminiAgent
+              ? t('settings.assistant.autoFollowCliModel', 'Automatically follow the model when CLI is running')
+              : undefined
+          }
           variant='settings'
         />
       </PreferenceRow>
@@ -442,13 +549,21 @@ const WeixinConfigForm: React.FC<WeixinConfigFormProps> = ({ pluginStatus, model
           <SectionHeader title={t('settings.assistant.nextSteps', 'Next Steps')} />
           <div className='text-14px text-t-secondary space-y-8px'>
             <p className='m-0'>
-              <strong>1.</strong> {t('settings.weixin.step1', '在微信中找到并给你的机器人发送任意消息')}
+              <strong>1.</strong> {t('settings.weixin.step1', 'Find and send a message to your bot in WeChat')}
             </p>
             <p className='m-0'>
-              <strong>2.</strong> {t('settings.weixin.step2', '配对请求会显示在下方，点击「批准」授权用户')}
+              <strong>2.</strong>{' '}
+              {t(
+                'settings.weixin.step2',
+                'A pairing request will appear below. Click "Approve" to authorize the user.'
+              )}
             </p>
             <p className='m-0'>
-              <strong>3.</strong> {t('settings.weixin.step3', '授权成功后，即可通过微信与 AI 助手对话')}
+              <strong>3.</strong>{' '}
+              {t(
+                'settings.weixin.step3',
+                'Once approved, you can start chatting with the AI assistant through WeChat!'
+              )}
             </p>
           </div>
         </div>

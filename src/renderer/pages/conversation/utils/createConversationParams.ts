@@ -61,6 +61,8 @@ export function getConversationTypeForBackend(backend: string): ICreateConversat
       return 'openclaw-gateway';
     case 'nanobot':
       return 'nanobot';
+    case 'remote':
+      return 'remote';
     default:
       // claude, qwen, codex, iflow, goose, auggie, kimi, opencode, copilot, qoder, codebuddy, droid, vibe, etc.
       // Note: codex now uses ACP path; legacy 'codex' type is not used for new conversations.
@@ -73,7 +75,7 @@ export function getConversationTypeForBackend(backend: string): ICreateConversat
  * ACP-routed types include claude, codebuddy, opencode, qwen, codex.
  */
 export function getConversationTypeForPreset(presetAgentType: string): ICreateConversationParams['type'] {
-  const ACP_ROUTED_TYPES = ['claude', 'codebuddy', 'opencode', 'qwen', 'codex'];
+  const ACP_ROUTED_TYPES = ['claude', 'codebuddy', 'opencode', 'qwen', 'codex', 'kiro'];
   if (ACP_ROUTED_TYPES.includes(presetAgentType)) {
     return 'acp';
   }

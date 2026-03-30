@@ -28,6 +28,7 @@ import { initModelBridge } from './modelBridge';
 import { initPreviewHistoryBridge } from './previewHistoryBridge';
 import { initShellBridge } from './shellBridge';
 import { initStarOfficeBridge } from './starOfficeBridge';
+import { initSpeechToTextBridge } from './speechToTextBridge';
 import { initTaskBridge } from './taskBridge';
 import { initUpdateBridge } from './updateBridge';
 import { initWebuiBridge } from './webuiBridge';
@@ -35,8 +36,11 @@ import { initSystemSettingsBridge } from './systemSettingsBridge';
 import { initWindowControlsBridge } from './windowControlsBridge';
 import { initNotificationBridge } from './notificationBridge';
 import { initPptPreviewBridge } from './pptPreviewBridge';
+import { initOfficeWatchBridge } from './officeWatchBridge';
 import { initExtensionsBridge } from './extensionsBridge';
 import { initWeixinLoginBridge } from './weixinLoginBridge';
+import { initWorkspaceSnapshotBridge } from './workspaceSnapshotBridge';
+import { initRemoteAgentBridge } from './remoteAgentBridge';
 
 export interface BridgeDependencies {
   conversationService: IConversationService;
@@ -66,6 +70,7 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initPreviewHistoryBridge();
   initDocumentBridge();
   initPptPreviewBridge();
+  initOfficeWatchBridge();
   initWindowControlsBridge();
   initUpdateBridge();
   initWebuiBridge();
@@ -77,7 +82,10 @@ export function initAllBridges(deps: BridgeDependencies): void {
   initNotificationBridge();
   initTaskBridge(deps.workerTaskManager);
   initStarOfficeBridge();
+  initSpeechToTextBridge();
   initWeixinLoginBridge();
+  initWorkspaceSnapshotBridge();
+  initRemoteAgentBridge();
 }
 
 /**
@@ -111,16 +119,21 @@ export {
   initMcpBridge,
   initModelBridge,
   initNotificationBridge,
+  initOfficeWatchBridge,
   initPptPreviewBridge,
   initPreviewHistoryBridge,
   initShellBridge,
+  initSpeechToTextBridge,
   initStarOfficeBridge,
   initSystemSettingsBridge,
   initTaskBridge,
   initUpdateBridge,
   initWebuiBridge,
+  initRemoteAgentBridge,
   initWindowControlsBridge,
   initWeixinLoginBridge,
+  initWorkspaceSnapshotBridge,
 };
+export { disposeAllSnapshots } from './workspaceSnapshotBridge';
 // 导出窗口控制相关工具函数
 export { registerWindowMaximizeListeners } from './windowControlsBridge';
