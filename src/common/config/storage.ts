@@ -76,6 +76,10 @@ export interface IConfigStorageRefer {
   'model.config': IProvider[];
   'mcp.config': IMcpServer[];
   'mcp.agentInstallStatus': Record<string, string[]>;
+  /** Enable MCP Apps interactive UI rendering in chat (default: false) */
+  'mcp.apps.enabled'?: boolean;
+  /** Trusted MCP server IDs allowed to render interactive UI */
+  'mcp.apps.trustList'?: string[];
   language: string;
   theme: string;
   colorScheme: string;
@@ -618,12 +622,30 @@ export interface IMcpServer {
 /** Stable ID for the built-in image generation MCP server */
 export const BUILTIN_IMAGE_GEN_ID = 'builtin-image-gen';
 
-export interface IMcpTool {
+/**
+ * MCP Apps UI metadata from tool `_meta.ui` field.
+ * Indicates the tool supports interactive UI rendering in the chat.
+ */
+export type McpToolUiMeta = {
+  /** URI of the UI resource, e.g. "ui://tool-name/view.html" */
+  resourceUri: string;
+  /** Content Security Policy domains the app needs to load from */
+  csp?: {
+    connectDomains?: string[];
+    resourceDomains?: string[];
+    frameDomains?: string[];
+  };
+};
+
+export type IMcpTool = {
   name: string;
   description?: string;
   inputSchema?: unknown;
-  _meta?: Record<string, unknown>;
-}
+  /** MCP Apps UI metadata — present when the tool supports interactive rendering */
+  _meta?: Record<string, unknown> & {
+    ui?: McpToolUiMeta;
+  };
+};
 
 /**
  * CSS 主题配置接口 / CSS Theme configuration interface

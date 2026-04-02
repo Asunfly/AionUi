@@ -70,5 +70,22 @@
     "normal": "Normal",
     "high": "Yüksek",
     "urgent": "Acil"
+  },
+  "apps": {
+    "loading": "Etkileşimli görünüm yükleniyor...",
+    "error": "Etkileşimli görünüm yüklenemedi",
+    "initTimeout": "Etkileşimli görünüm zamanında yanıt vermedi",
+    "rawData": "Ham verileri göster",
+    "settings": {
+      "title": "MCP Apps",
+      "description": "MCP sunucularının sohbette etkileşimli arayüz oluşturmasına izin ver",
+      "enabled": "MCP Apps'i etkinleştir",
+      "trustList": "Güvenilen Sunucular",
+      "trustListEmpty": "Henüz güvenilen sunucu yok",
+      "addTrust": "Bu sunucuya güven",
+      "removeTrust": "Güveni kaldır"
+    },
+    "trustPrompt": "\"{{serverName}}\" etkileşimli arayüzü destekliyor. Etkileşimli içerik görüntülemek için bu sunucuya güveniyor musunuz?",
+    "enablePrompt": "MCP Apps şu anda devre dışı. Etkileşimli içeriği görmek için etkinleştirmek ister misiniz?"
   }
 }

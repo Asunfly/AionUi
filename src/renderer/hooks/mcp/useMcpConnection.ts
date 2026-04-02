@@ -69,7 +69,7 @@ export const useMcpConnection = (
           }
 
           if (result.success) {
-            // 更新服务器状态为已连接，并保存获取到的工具信息
+            // 更新服务器状态为已连接，并保存获取到的工具信息（含 _meta.ui）
             // 连接成功时不修改 enabled 字段，让用户决定是否安装
             await updateServerStatus('connected', {
               tools: result.tools?.map((tool) => ({

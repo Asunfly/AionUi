@@ -70,5 +70,22 @@
     "normal": "보통",
     "high": "높음",
     "urgent": "긴급"
+  },
+  "apps": {
+    "loading": "대화형 뷰를 로드하는 중...",
+    "error": "대화형 뷰를 로드하지 못했습니다",
+    "initTimeout": "대화형 뷰가 시간 내에 응답하지 않았습니다",
+    "rawData": "원시 데이터 표시",
+    "settings": {
+      "title": "MCP Apps",
+      "description": "MCP 서버가 채팅에서 대화형 UI를 렌더링하도록 허용",
+      "enabled": "MCP Apps 활성화",
+      "trustList": "신뢰할 수 있는 서버",
+      "trustListEmpty": "아직 신뢰할 수 있는 서버가 없습니다",
+      "addTrust": "이 서버 신뢰",
+      "removeTrust": "신뢰 제거"
+    },
+    "trustPrompt": "\"{{serverName}}\"이(가) 대화형 UI를 지원합니다. 이 서버를 신뢰하여 대화형 콘텐츠를 표시하시겠습니까?",
+    "enablePrompt": "MCP Apps가 현재 비활성화되어 있습니다. 대화형 콘텐츠를 보려면 활성화하시겠습니까?"
   }
 }
