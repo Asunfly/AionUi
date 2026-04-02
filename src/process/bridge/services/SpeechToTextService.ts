@@ -59,7 +59,7 @@ const normalizeAudioBuffer = (audioBuffer: SpeechToTextAudioBuffer): Uint8Array 
 
   const orderedKeys = Object.keys(audioBuffer)
     .filter((key) => /^\d+$/.test(key))
-    .sort((a, b) => Number(a) - Number(b));
+    .toSorted((a, b) => Number(a) - Number(b));
 
   return Uint8Array.from(orderedKeys.map((key) => audioBuffer[key] ?? 0));
 };
@@ -198,7 +198,8 @@ export class SpeechToTextService {
 
     const language = request.languageHint || config.openai?.language;
     if (language) {
-      formData.append('language', language);
+      // OpenAI Whisper requires ISO 639-1 codes (e.g. "en"), not BCP 47 (e.g. "en-us")
+      formData.append('language', language.split('-')[0].toLowerCase());
     }
     if (config.openai?.prompt) {
       formData.append('prompt', config.openai.prompt);

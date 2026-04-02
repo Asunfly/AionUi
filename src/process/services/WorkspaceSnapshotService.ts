@@ -35,6 +35,17 @@ export class WorkspaceSnapshotService {
       await this.dispose(workspacePath);
     }
 
+    // Verify workspace directory exists before attempting snapshot.
+    // Temp directories (claude-temp-*, .gemini, etc.) may be deleted before init runs.
+    try {
+      const stat = await fs.stat(workspacePath);
+      if (!stat.isDirectory()) {
+        return { mode: 'snapshot', branch: null };
+      }
+    } catch {
+      return { mode: 'snapshot', branch: null };
+    }
+
     const mode = await this.detectMode(workspacePath);
 
     if (mode === 'git-repo') {
@@ -85,7 +96,10 @@ export class WorkspaceSnapshotService {
   // --- Branch operations (git-repo mode only) ---
 
   async getBranches(workspacePath: string): Promise<string[]> {
-    this.ensureGitRepo(workspacePath);
+    const state = this.snapshots.get(workspacePath);
+    if (!state || state.mode !== 'git-repo') {
+      return [];
+    }
     const { stdout } = await execFileAsync('git', ['branch', '--format=%(refname:short)'], { cwd: workspacePath });
     return stdout
       .split('\n')
@@ -102,7 +116,7 @@ export class WorkspaceSnapshotService {
 
   async stageAll(workspacePath: string): Promise<void> {
     this.ensureGitRepo(workspacePath);
-    await execFileAsync('git', ['add', '-A'], { cwd: workspacePath });
+    await execFileAsync('git', ['add', '-A'], { cwd: workspacePath, maxBuffer: 10 * 1024 * 1024 });
   }
 
   async unstageFile(workspacePath: string, filePath: string): Promise<void> {
@@ -171,6 +185,24 @@ export class WorkspaceSnapshotService {
     await Promise.all(workspaces.map((ws) => this.dispose(ws)));
   }
 
+  /**
+   * Remove leftover `aionui-snapshot-*` directories from previous sessions
+   * that were not cleaned up (e.g. due to a crash). Safe to call at startup
+   * as a fire-and-forget — errors are silently ignored.
+   */
+  static async cleanupStaleSnapshots(): Promise<void> {
+    const tmpdir = os.tmpdir();
+    let entries: string[];
+    try {
+      entries = await fs.readdir(tmpdir);
+    } catch {
+      return;
+    }
+
+    const stale = entries.filter((name) => name.startsWith('aionui-snapshot-'));
+    await Promise.allSettled(stale.map((name) => fs.rm(path.join(tmpdir, name), { recursive: true, force: true })));
+  }
+
   // --- Private ---
 
   private gitArgs(state: SnapshotState): string[] {
@@ -233,7 +265,16 @@ export class WorkspaceSnapshotService {
       createdGitignore = true;
     }
 
-    const gitdir = await this.createWorkingTreeSnapshot(workspacePath);
+    let gitdir: string | undefined;
+    try {
+      gitdir = await this.createWorkingTreeSnapshot(workspacePath);
+    } catch {
+      // Workspace may have been removed during snapshot creation — clean up and bail
+      if (createdGitignore) {
+        await fs.unlink(gitignorePath).catch(() => {});
+      }
+      return { mode: 'snapshot', branch: null };
+    }
 
     const { stdout: oidOut } = await execFileAsync(
       'git',
@@ -347,7 +388,20 @@ export class WorkspaceSnapshotService {
     const gitArgs = [`--git-dir=${gitdir}`, `--work-tree=${workspacePath}`];
 
     await execFileAsync('git', ['init', '--bare', gitdir]);
-    await execFileAsync('git', [...gitArgs, 'add', '.'], { cwd: workspacePath });
+    // Use --ignore-errors so locked/permission-denied files don't abort the entire snapshot.
+    // The command still exits non-zero when some files fail, so catch and verify the commit succeeds.
+    try {
+      await execFileAsync('git', [...gitArgs, 'add', '--ignore-errors', '.'], {
+        cwd: workspacePath,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+    } catch (error) {
+      const stderr = (error as { stderr?: string }).stderr ?? '';
+      // Re-throw if the error is NOT a partial indexing failure (e.g. git not found)
+      if (!stderr.includes('Permission denied') && !stderr.includes('unable to index file')) {
+        throw error;
+      }
+    }
     await execFileAsync(
       'git',
       [
@@ -361,7 +415,7 @@ export class WorkspaceSnapshotService {
         '-m',
         'baseline',
       ],
-      { cwd: workspacePath }
+      { cwd: workspacePath, maxBuffer: 10 * 1024 * 1024 }
     );
 
     return gitdir;

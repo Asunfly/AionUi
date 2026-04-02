@@ -123,6 +123,7 @@ export interface AcpAgentConfig {
 
 // ACP agent任务类
 export class AcpAgent {
+  private expectedDisconnectReason: 'idle_timeout' | null = null;
   private readonly id: string;
   private extra: {
     workspace?: string;
@@ -225,6 +226,10 @@ export class AcpAgent {
     this.connection.onDisconnect = (error) => {
       this.handleDisconnect(error);
     };
+  }
+
+  setExpectedDisconnectReason(reason: 'idle_timeout' | null): void {
+    this.expectedDisconnectReason = reason;
   }
 
   /**
@@ -628,6 +633,7 @@ export class AcpAgent {
       });
 
       this.adapter.resetMessageTracking();
+      this.adapter.resetPlanTracking();
       let processedContent = data.content;
 
       // Add @ prefix to ALL uploaded files (including images) with FULL PATH
@@ -1127,12 +1133,15 @@ export class AcpAgent {
         return;
       }
 
+      // Allow users up to 30 minutes to respond to permission prompts.
+      // The previous 70-second timeout caused auto-rejections when users
+      // stepped away briefly, leading to "internal error" on return.
       setTimeout(() => {
         if (this.pendingPermissions.has(requestId)) {
           this.pendingPermissions.delete(requestId);
           reject(new Error('Permission request timed out'));
         }
-      }, 70000);
+      }, 1800000);
     });
   }
 
@@ -1181,10 +1190,14 @@ export class AcpAgent {
     this.emitStatusMessage('disconnected');
 
     // 2. Emit error message with helpful information
+    const disconnectReason = this.expectedDisconnectReason;
+    this.expectedDisconnectReason = null;
     const errorMsg =
-      `${this.extra.backend} process disconnected unexpectedly ` +
-      `(code: ${error.code}, signal: ${error.signal}). ` +
-      `Please try sending a new message to reconnect.`;
+      disconnectReason === 'idle_timeout'
+        ? 'Session closed after 30 minutes of inactivity. Send a new message to reconnect.'
+        : `${this.extra.backend} process disconnected unexpectedly ` +
+          `(code: ${error.code}, signal: ${error.signal}). ` +
+          `Please try sending a new message to reconnect.`;
     this.emitErrorMessage(errorMsg);
 
     // 3. Emit finish signal to reset UI loading state
@@ -1378,7 +1391,6 @@ export class AcpAgent {
         // Distinguish between thought messages and error messages
         if (message.content.type === 'warning' && message.position === 'center') {
           const subject = this.extractThoughtSubject(message.content.content);
-
           responseMessage.type = 'thought';
           responseMessage.data = {
             subject,
