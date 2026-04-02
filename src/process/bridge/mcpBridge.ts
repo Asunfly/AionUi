@@ -7,6 +7,9 @@
 import { ipcBridge } from '@/common';
 import { mcpService } from '@process/services/mcpServices/McpService';
 import { mcpOAuthService } from '@process/services/mcpServices/McpOAuthService';
+import { McpAppsService } from '@process/services/mcpServices/McpAppsService';
+
+const mcpAppsService = new McpAppsService();
 
 export function initMcpBridge(): void {
   // MCP 服务相关 IPC 处理程序
@@ -103,6 +106,32 @@ export function initMcpBridge(): void {
       return {
         success: false,
         msg: error instanceof Error ? error.message : 'Unknown error getting authenticated servers',
+      };
+    }
+  });
+
+  // MCP Apps — UI resource fetching
+  ipcBridge.mcpService.readUiResource.provider(async ({ serverName, resourceUri, transport }) => {
+    try {
+      const result = await mcpAppsService.readUiResource(serverName, resourceUri, transport);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Failed to read MCP Apps UI resource',
+      };
+    }
+  });
+
+  // MCP Apps — reverse tool call (iframe → Host → Server)
+  ipcBridge.mcpService.callMcpTool.provider(async ({ serverName, toolName, transport, arguments: args }) => {
+    try {
+      const result = await mcpAppsService.callTool(serverName, toolName, transport, args);
+      return { success: true, data: result };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Failed to call MCP tool',
       };
     }
   });

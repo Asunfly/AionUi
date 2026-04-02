@@ -70,5 +70,22 @@
     "normal": "一般",
     "high": "高",
     "urgent": "緊急"
+  },
+  "apps": {
+    "loading": "正在載入互動式檢視...",
+    "error": "載入互動式檢視失敗",
+    "initTimeout": "互動式檢視未在規定時間內回應",
+    "rawData": "顯示原始資料",
+    "settings": {
+      "title": "MCP Apps",
+      "description": "允許 MCP 伺服器在聊天中呈現互動式 UI",
+      "enabled": "啟用 MCP Apps",
+      "trustList": "受信任的伺服器",
+      "trustListEmpty": "尚無受信任的伺服器",
+      "addTrust": "信任此伺服器",
+      "removeTrust": "取消信任"
+    },
+    "trustPrompt": "\"{{serverName}}\" 支援互動式 UI。是否信任此伺服器呈現互動式內容？",
+    "enablePrompt": "MCP Apps 目前已停用。是否啟用以查看互動式內容？"
   }
 }

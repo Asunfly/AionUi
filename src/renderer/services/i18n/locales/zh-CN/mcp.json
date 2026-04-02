@@ -70,5 +70,22 @@
     "normal": "普通",
     "high": "高",
     "urgent": "紧急"
+  },
+  "apps": {
+    "loading": "正在加载交互式视图...",
+    "error": "加载交互式视图失败",
+    "initTimeout": "交互式视图未在规定时间内响应",
+    "rawData": "显示原始数据",
+    "settings": {
+      "title": "MCP Apps",
+      "description": "允许 MCP 服务器在聊天中渲染交互式 UI",
+      "enabled": "启用 MCP Apps",
+      "trustList": "受信任的服务器",
+      "trustListEmpty": "暂无受信任的服务器",
+      "addTrust": "信任此服务器",
+      "removeTrust": "取消信任"
+    },
+    "trustPrompt": "\"{{serverName}}\" 支持交互式 UI。是否信任此服务器渲染交互式内容？",
+    "enablePrompt": "MCP Apps 当前已禁用。是否启用以查看交互式内容？"
   }
 }

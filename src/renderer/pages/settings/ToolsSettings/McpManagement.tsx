@@ -1,4 +1,4 @@
-import { Button, Collapse, Modal, Dropdown, Menu } from '@arco-design/web-react';
+import { Button, Collapse, Modal, Dropdown, Menu, Switch, Typography } from '@arco-design/web-react';
 import { Plus, Down } from '@icon-park/react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import {
   useMcpModal,
   useMcpServerCRUD,
   useMcpOAuth,
+  useMcpAppsConfig,
 } from '@/renderer/hooks/mcp';
 
 interface McpManagementProps {
@@ -39,6 +40,7 @@ const McpManagement: React.FC<McpManagementProps> = ({ message }) => {
 
   // OAuth hook
   const { oauthStatus, loggingIn, checkOAuthStatus, login } = useMcpOAuth();
+  const { enabled: mcpAppsEnabled, setEnabled: setMcpAppsEnabled } = useMcpAppsConfig();
 
   // 当需要认证时的回调
   const handleAuthRequired = React.useCallback(
@@ -335,6 +337,19 @@ const McpManagement: React.FC<McpManagementProps> = ({ message }) => {
       >
         <p>{t('settings.mcpDeleteConfirm')}</p>
       </Modal>
+
+      {/* MCP Apps toggle */}
+      <Collapse.Item header={t('mcp.apps.settings.title')} name='mcp-apps'>
+        <div className='flex items-center justify-between py-2'>
+          <div>
+            <div className='text-sm text-t-primary'>{t('mcp.apps.settings.enabled')}</div>
+            <Typography.Text type='secondary' className='text-xs'>
+              {t('mcp.apps.settings.description')}
+            </Typography.Text>
+          </div>
+          <Switch checked={mcpAppsEnabled} onChange={(checked) => void setMcpAppsEnabled(checked)} />
+        </div>
+      </Collapse.Item>
     </div>
   );
 };

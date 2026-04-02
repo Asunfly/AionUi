@@ -9,12 +9,44 @@ import { promises as fs } from 'fs';
 import { safeExec } from '@process/utils/safeExec';
 import type { AcpBackendAll } from '@/common/types/acpTypes';
 import { JSONRPC_VERSION } from '@/common/types/acpTypes';
-import type { IMcpServer } from '@/common/config/storage';
+import type { IMcpServer, IMcpTool } from '@/common/config/storage';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { getEnhancedEnv, getNpxCacheDir, resolveNpxPath } from '@/process/utils/shellEnv';
+
+/** MCP Apps UI extension identifier */
+const MCP_UI_EXTENSION_ID = 'io.modelcontextprotocol/ui';
+
+/**
+ * Build MCP client capabilities including MCP Apps UI extension support.
+ * Declaring this capability is always safe — the server simply includes
+ * `_meta.ui` on its tool definitions when it sees this; the renderer-side
+ * feature flag controls whether the UI is actually rendered.
+ */
+function buildMcpClientCapabilities() {
+  return {
+    sampling: {},
+    experimental: {
+      [MCP_UI_EXTENSION_ID]: {},
+    },
+  };
+}
+
+/** Extract tool metadata from SDK tool objects, preserving `_meta.ui` when present */
+function extractToolMetadata(
+  sdkTools: Array<{ name: string; description?: string; _meta?: Record<string, unknown> }>
+): IMcpTool[] {
+  return sdkTools.map((tool) => {
+    const base: IMcpTool = { name: tool.name, description: tool.description };
+    const uiMeta = (tool._meta as Record<string, unknown>)?.ui;
+    if (uiMeta && typeof uiMeta === 'object') {
+      base._meta = { ui: uiMeta as IMcpTool['_meta'] extends { ui?: infer U } ? U : never };
+    }
+    return base;
+  });
+}
 
 /**
  * MCP源类型 - 包括所有ACP后端和AionUi内置
@@ -34,7 +66,7 @@ export interface McpOperationResult {
  */
 export interface McpConnectionTestResult {
   success: boolean;
-  tools?: Array<{ name: string; description?: string }>;
+  tools?: IMcpTool[];
   error?: string;
   needsAuth?: boolean; // 是否需要 OAuth 认证
   authMethod?: 'oauth' | 'basic'; // 认证方法
@@ -232,20 +264,14 @@ export abstract class AbstractMcpAgent implements IMcpProtocol {
           version: getPlatformServices().paths.getVersion(),
         },
         {
-          capabilities: {
-            sampling: {},
-          },
+          capabilities: buildMcpClientCapabilities(),
         }
       );
 
       // 连接到服务器并获取工具列表
       await mcpClient.connect(stdioTransport);
       const result = await mcpClient.listTools();
-
-      const tools = result.tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-      }));
+      const tools = extractToolMetadata(result.tools);
 
       return { success: true, tools };
     } catch (error) {
@@ -373,20 +399,14 @@ export abstract class AbstractMcpAgent implements IMcpProtocol {
           version: getPlatformServices().paths.getVersion(),
         },
         {
-          capabilities: {
-            sampling: {},
-          },
+          capabilities: buildMcpClientCapabilities(),
         }
       );
 
       // 连接到服务器并获取工具列表
       await mcpClient.connect(sseTransport);
       const result = await mcpClient.listTools();
-
-      const tools = result.tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-      }));
+      const tools = extractToolMetadata(result.tools);
 
       return { success: true, tools };
     } catch (error) {
@@ -444,6 +464,9 @@ export abstract class AbstractMcpAgent implements IMcpProtocol {
             protocolVersion: '2024-11-05',
             capabilities: {
               tools: {},
+              experimental: {
+                [MCP_UI_EXTENSION_ID]: {},
+              },
             },
             clientInfo: {
               name: getPlatformServices().paths.getName(),
@@ -519,13 +542,10 @@ export abstract class AbstractMcpAgent implements IMcpProtocol {
         };
       }
 
-      const tools = toolsResult.result?.tools || [];
+      const rawTools = toolsResult.result?.tools || [];
       return {
         success: true,
-        tools: tools.map((tool: { name: string; description?: string }) => ({
-          name: tool.name,
-          description: tool.description,
-        })),
+        tools: extractToolMetadata(rawTools),
       };
     } catch (error) {
       return {
@@ -562,20 +582,14 @@ export abstract class AbstractMcpAgent implements IMcpProtocol {
           version: getPlatformServices().paths.getVersion(),
         },
         {
-          capabilities: {
-            sampling: {},
-          },
+          capabilities: buildMcpClientCapabilities(),
         }
       );
 
       // 连接到服务器并获取工具列表
       await mcpClient.connect(streamableHttpTransport);
       const result = await mcpClient.listTools();
-
-      const tools = result.tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-      }));
+      const tools = extractToolMetadata(result.tools);
 
       return { success: true, tools };
     } catch (error) {

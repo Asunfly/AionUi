@@ -179,6 +179,8 @@ export interface McpToolCallBeginData {
   invocation?: McpInvocation;
   toolName?: string;
   serverName?: string;
+  /** MCP Apps UI metadata — present when the tool supports interactive rendering */
+  uiMeta?: { resourceUri: string; csp?: { connectDomains?: string[]; resourceDomains?: string[] } };
 }
 
 export interface McpToolCallEndData {
@@ -186,6 +188,8 @@ export interface McpToolCallEndData {
   result?: unknown;
   error?: string;
   duration?: string | number;
+  /** MCP Apps UI metadata — present when the tool supports interactive rendering */
+  uiMeta?: { resourceUri: string; csp?: { connectDomains?: string[]; resourceDomains?: string[] } };
 }
 
 // Web search event data interfaces

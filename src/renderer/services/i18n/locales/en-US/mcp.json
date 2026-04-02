@@ -70,5 +70,22 @@
     "normal": "Normal",
     "high": "High",
     "urgent": "Urgent"
+  },
+  "apps": {
+    "loading": "Loading interactive view...",
+    "error": "Failed to load interactive view",
+    "initTimeout": "Interactive view did not respond in time",
+    "rawData": "Show raw data",
+    "settings": {
+      "title": "MCP Apps",
+      "description": "Allow MCP servers to render interactive UI in chat",
+      "enabled": "Enable MCP Apps",
+      "trustList": "Trusted Servers",
+      "trustListEmpty": "No trusted servers yet",
+      "addTrust": "Trust this server",
+      "removeTrust": "Remove trust"
+    },
+    "trustPrompt": "\"{{serverName}}\" supports interactive UI. Trust it to render interactive content?",
+    "enablePrompt": "MCP Apps is currently disabled. Enable it to see interactive content?"
   }
 }

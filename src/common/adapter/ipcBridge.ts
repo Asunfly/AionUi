@@ -10,7 +10,15 @@ import type { OpenDialogOptions } from 'electron';
 import type { McpSource } from '../../process/services/mcpServices/McpProtocol';
 import type { AcpBackend, AcpBackendAll, AcpModelInfo, PresetAgentType } from '../types/acpTypes';
 import type { SlashCommandItem } from '../chat/slash/types';
-import type { IMcpServer, IProvider, TChatConversation, TProviderWithModel, ICssTheme } from '../config/storage';
+import type {
+  IMcpServer,
+  IMcpTool,
+  McpToolUiMeta,
+  IProvider,
+  TChatConversation,
+  TProviderWithModel,
+  ICssTheme,
+} from '../config/storage';
 import type { PreviewHistoryTarget, PreviewSnapshotInfo } from '../types/preview';
 import type {
   UpdateCheckRequest,
@@ -514,7 +522,7 @@ export const mcpService = {
   testMcpConnection: bridge.buildProvider<
     IBridgeResponse<{
       success: boolean;
-      tools?: Array<{ name: string; description?: string }>;
+      tools?: IMcpTool[];
       error?: string;
       needsAuth?: boolean;
       authMethod?: 'oauth' | 'basic';
@@ -541,6 +549,16 @@ export const mcpService = {
   >('mcp.login-oauth'),
   logoutMcpOAuth: bridge.buildProvider<IBridgeResponse, string>('mcp.logout-oauth'),
   getAuthenticatedServers: bridge.buildProvider<IBridgeResponse<string[]>, void>('mcp.get-authenticated-servers'),
+  // MCP Apps — UI resource fetching
+  readUiResource: bridge.buildProvider<
+    IBridgeResponse<{ html: string; csp?: McpToolUiMeta['csp'] }>,
+    { serverName: string; resourceUri: string; transport: IMcpServer['transport'] }
+  >('mcp.read-ui-resource'),
+  // MCP Apps — reverse tool call (iframe → Host → Server)
+  callMcpTool: bridge.buildProvider<
+    IBridgeResponse<unknown>,
+    { serverName: string; toolName: string; transport: IMcpServer['transport']; arguments?: Record<string, unknown> }
+  >('mcp.call-tool'),
 };
 
 // Codex 对话相关接口 - 复用统一的conversation接口
