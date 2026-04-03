@@ -30,6 +30,7 @@ import {
   useMcpModal,
   useMcpServerCRUD,
   useMcpOAuth,
+  useMcpAppsConfig,
 } from '@/renderer/hooks/mcp';
 import classNames from 'classnames';
 import { useSettingsViewMode } from '../settingsViewContext';
@@ -226,6 +227,7 @@ const ModalMcpManagementSection: React.FC<{
     useMcpAgentStatus();
   const { syncMcpToAgents, removeMcpFromAgents } = useMcpOperations(mcpServers, message);
   const { oauthStatus, loggingIn, checkOAuthStatus, login } = useMcpOAuth();
+  const { enabled: mcpAppsEnabled, setEnabled: setMcpAppsEnabled } = useMcpAppsConfig();
   const visibleMcpServers = useMemo(
     () => mcpServers.filter((server) => !isBuiltinImageGenServer(server)),
     [mcpServers]
@@ -506,6 +508,16 @@ const ModalMcpManagementSection: React.FC<{
       >
         <p>{t('settings.mcpDeleteConfirm')}</p>
       </Modal>
+
+      {/* MCP Apps toggle */}
+      <Divider style={{ margin: '12px 0' }} />
+      <div className='flex items-center justify-between'>
+        <div>
+          <div className='text-14px text-t-primary'>{t('mcp.apps.settings.enabled')}</div>
+          <div className='text-12px text-t-secondary'>{t('mcp.apps.settings.description')}</div>
+        </div>
+        <Switch checked={mcpAppsEnabled} onChange={(checked) => void setMcpAppsEnabled(checked)} />
+      </div>
     </div>
   );
 };

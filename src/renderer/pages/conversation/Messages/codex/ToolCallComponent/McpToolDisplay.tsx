@@ -7,7 +7,7 @@
 import type { CodexToolCallUpdate } from '@/common/chat/chatLib';
 import { ConfigStorage } from '@/common/config/storage';
 import type { IMcpServer } from '@/common/config/storage';
-import { Collapse, Tag } from '@arco-design/web-react';
+import { Alert, Button, Collapse, Tag } from '@arco-design/web-react';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMcpAppsConfig } from '@renderer/hooks/mcp/useMcpAppsConfig';
@@ -16,10 +16,26 @@ import McpAppContainer from './McpAppContainer';
 
 type McpToolUpdate = Extract<CodexToolCallUpdate, { subtype: 'mcp_tool_call_begin' | 'mcp_tool_call_end' }>;
 
+type McpAppRenderState = 'raw' | 'enable_prompt' | 'trust_prompt' | 'render';
+
+export function getMcpAppRenderState(args: {
+  hasUiMeta: boolean;
+  enabled: boolean;
+  hasServerConfig: boolean;
+  trusted: boolean;
+}): McpAppRenderState {
+  const { hasUiMeta, enabled, hasServerConfig, trusted } = args;
+
+  if (!hasUiMeta || !hasServerConfig) return 'raw';
+  if (!enabled) return 'enable_prompt';
+  if (!trusted) return 'trust_prompt';
+  return 'render';
+}
+
 const McpToolDisplay: React.FC<{ content: McpToolUpdate }> = ({ content }) => {
   const { toolCallId, title, status, description, subtype, data } = content;
   const { t } = useTranslation();
-  const { enabled, isServerTrusted } = useMcpAppsConfig();
+  const { enabled, isServerTrusted, setEnabled, addTrust } = useMcpAppsConfig();
 
   const [serverConfig, setServerConfig] = useState<IMcpServer | null>(null);
 
@@ -32,14 +48,20 @@ const McpToolDisplay: React.FC<{ content: McpToolUpdate }> = ({ content }) => {
 
   // Look up server config to get transport info for McpAppContainer
   useEffect(() => {
-    if (!uiMeta?.resourceUri || !serverName) return;
+    if (!serverName) return;
     void ConfigStorage.get('mcp.config').then((servers) => {
-      const found = servers?.find((s) => s.name === serverName);
-      if (found) setServerConfig(found);
+      const found = servers?.find((s) => s.name === serverName) ?? null;
+      setServerConfig(found);
     });
-  }, [uiMeta?.resourceUri, serverName]);
+  }, [serverName]);
 
-  const canRenderApp = enabled && uiMeta?.resourceUri && serverConfig && isServerTrusted(serverConfig.id);
+  const renderState = getMcpAppRenderState({
+    hasUiMeta: Boolean(uiMeta?.resourceUri),
+    enabled,
+    hasServerConfig: Boolean(serverConfig),
+    trusted: serverConfig ? isServerTrusted(serverConfig.id) : false,
+  });
+  const canRenderApp = renderState === 'render';
 
   const getDisplayTitle = () => {
     if (title) return title;
@@ -64,6 +86,36 @@ const McpToolDisplay: React.FC<{ content: McpToolUpdate }> = ({ content }) => {
       icon='🔌'
     >
       {/* MCP App interactive UI */}
+      {renderState === 'enable_prompt' && (
+        <Alert
+          className='mt-2'
+          type='info'
+          content={
+            <div className='flex items-center justify-between gap-3'>
+              <span>{t('mcp.apps.enablePrompt')}</span>
+              <Button size='mini' type='primary' onClick={() => void setEnabled(true)}>
+                {t('common.confirm')}
+              </Button>
+            </div>
+          }
+        />
+      )}
+
+      {renderState === 'trust_prompt' && serverConfig && (
+        <Alert
+          className='mt-2'
+          type='info'
+          content={
+            <div className='flex items-center justify-between gap-3'>
+              <span>{t('mcp.apps.trustPrompt', { serverName })}</span>
+              <Button size='mini' type='primary' onClick={() => void addTrust(serverConfig.id)}>
+                {t('common.confirm')}
+              </Button>
+            </div>
+          }
+        />
+      )}
+
       {canRenderApp && serverConfig && uiMeta?.resourceUri && (
         <McpAppContainer
           serverName={serverName}
