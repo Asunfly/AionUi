@@ -32,7 +32,7 @@ export class WorkerTaskManager implements IWorkerTaskManager {
     const now = Date.now();
     const idleTasks = this.taskList.filter(
       (item) =>
-        (item.task.type === 'acp' || item.task.type === 'codex') &&
+        item.task.type === 'acp' &&
         !cronBusyGuard.isProcessing(item.id) &&
         now - item.task.lastActivityAt > AGENT_IDLE_TIMEOUT_MS
     );
@@ -59,9 +59,7 @@ export class WorkerTaskManager implements IWorkerTaskManager {
 
   private _buildAndCache(conversation: TChatConversation, options?: BuildConversationOptions): IAgentManager {
     const task = this.factory.create(conversation, options);
-    if (!options?.skipCache) {
-      this.taskList.push({ id: conversation.id, task });
-    }
+    this.addTask(conversation.id, task);
     return task;
   }
 

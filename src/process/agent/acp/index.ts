@@ -112,6 +112,8 @@ export interface AcpAgentConfig {
     currentModelId?: string;
     /** Initial session mode to apply at session start (e.g., acceptEdits, auto, dontAsk, plan) */
     sessionMode?: string;
+    /** Team MCP server stdio config injected by TeamSessionService */
+    teamMcpStdioConfig?: { name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> };
   };
   onStreamEvent: (data: IResponseMessage) => void;
   onSignalEvent?: (data: IResponseMessage) => void; // 新增：仅发送信号，不更新UI
@@ -145,6 +147,8 @@ export class AcpAgent {
     currentModelId?: string;
     /** Initial session mode to apply at session start (e.g., acceptEdits, auto, dontAsk, plan) */
     sessionMode?: string;
+    /** Team MCP server stdio config injected by TeamSessionService */
+    teamMcpStdioConfig?: { name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> };
   };
   private connection: AcpConnection;
   private adapter: AcpAdapter;
@@ -1133,15 +1137,16 @@ export class AcpAgent {
         return;
       }
 
-      // Allow users up to 30 minutes to respond to permission prompts.
-      // The previous 70-second timeout caused auto-rejections when users
-      // stepped away briefly, leading to "internal error" on return.
-      setTimeout(() => {
-        if (this.pendingPermissions.has(requestId)) {
-          this.pendingPermissions.delete(requestId);
-          reject(new Error('Permission request timed out'));
-        }
-      }, 1800000);
+      // In team mode, wait indefinitely for leader to approve (like Claude).
+      // In standalone mode, allow up to 30 minutes to respond to permission prompts.
+      if (!this.extra.teamMcpStdioConfig) {
+        setTimeout(() => {
+          if (this.pendingPermissions.has(requestId)) {
+            this.pendingPermissions.delete(requestId);
+            reject(new Error('Permission request timed out'));
+          }
+        }, 1800000);
+      }
     });
   }
 
@@ -1219,37 +1224,71 @@ export class AcpAgent {
   }
 
   private handleFileOperation(operation: { method: string; path: string; content?: string; sessionId: string }): void {
-    // 创建文件操作消息显示在UI中
-    const fileOperationMessage: TMessage = {
-      id: uuid(),
-      conversation_id: this.id,
-      type: 'text',
-      position: 'left',
-      createdAt: Date.now(),
-      content: {
-        content: this.formatFileOperationMessage(operation),
-      },
-    };
-
-    this.emitMessage(fileOperationMessage);
+    this.emitMessage(this.createFileOperationToolCall(operation));
   }
 
-  private formatFileOperationMessage(operation: {
+  private createFileOperationToolCall(operation: {
     method: string;
     path: string;
     content?: string;
     sessionId: string;
-  }): string {
-    switch (operation.method) {
-      case 'fs/write_text_file': {
-        const content = operation.content || '';
-        return `📝 File written: \`${operation.path}\`\n\n\`\`\`\n${content}\n\`\`\``;
-      }
+  }): TMessage {
+    const toolCallId = uuid();
+    const contentPreview =
+      operation.method === 'fs/write_text_file' && operation.content
+        ? [
+            {
+              type: 'content' as const,
+              content: {
+                type: 'text' as const,
+                text: this.formatFileOperationPreview(operation.content),
+              },
+            },
+          ]
+        : undefined;
+
+    return {
+      id: toolCallId,
+      msg_id: toolCallId,
+      conversation_id: this.id,
+      type: 'acp_tool_call',
+      position: 'left',
+      createdAt: Date.now(),
+      content: {
+        sessionId: operation.sessionId,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId,
+          status: 'completed',
+          title: this.getFileOperationTitle(operation.method),
+          kind: operation.method === 'fs/read_text_file' ? 'read' : 'edit',
+          rawInput: {
+            file_path: operation.path,
+            method: operation.method,
+          },
+          content: contentPreview,
+          locations: [{ path: operation.path }],
+        },
+      },
+    };
+  }
+
+  private getFileOperationTitle(method: string): string {
+    switch (method) {
+      case 'fs/write_text_file':
+        return 'File Write';
       case 'fs/read_text_file':
-        return `📖 File read: \`${operation.path}\``;
+        return 'File Read';
       default:
-        return `🔧 File operation: \`${operation.path}\``;
+        return 'File Operation';
     }
+  }
+
+  private formatFileOperationPreview(content: string): string {
+    if (content.length <= 500) {
+      return content;
+    }
+    return content.slice(0, 500) + '\n... (truncated)';
   }
 
   private emitStatusMessage(
@@ -1508,22 +1547,34 @@ export class AcpAgent {
   private async loadBuiltinSessionMcpServers(): Promise<AcpSessionMcpServer[]> {
     try {
       const mcpConfig = await ProcessConfig.get('mcp.config');
-      if (!Array.isArray(mcpConfig) || mcpConfig.length === 0) {
-        return [];
+      const servers: AcpSessionMcpServer[] = [];
+
+      if (Array.isArray(mcpConfig) && mcpConfig.length > 0) {
+        const capabilities = parseAcpMcpCapabilities(this.connection.getInitializeResponse());
+        servers.push(...buildBuiltinAcpSessionMcpServers(mcpConfig as IMcpServer[], capabilities));
       }
 
-      const capabilities = parseAcpMcpCapabilities(this.connection.getInitializeResponse());
-      const sessionMcpServers = buildBuiltinAcpSessionMcpServers(mcpConfig as IMcpServer[], capabilities);
+      // Inject team MCP server if this agent belongs to a team (stdio mode)
+      const teamMcpStdioConfig = this.extra.teamMcpStdioConfig;
+      if (teamMcpStdioConfig && teamMcpStdioConfig.command) {
+        servers.push({
+          name: teamMcpStdioConfig.name,
+          command: teamMcpStdioConfig.command,
+          args: teamMcpStdioConfig.args,
+          env: teamMcpStdioConfig.env,
+        });
+        mainLog(`[ACP ${this.extra.backend}]`, `Injecting team MCP server (stdio): ${teamMcpStdioConfig.name}`);
+      }
 
-      if (sessionMcpServers.length > 0) {
+      if (servers.length > 0) {
         mainLog(
           `[ACP ${this.extra.backend}]`,
-          `Injecting ${sessionMcpServers.length} built-in MCP server(s) into session/new`,
-          sessionMcpServers.map((server) => `${server.name}:${server.type}`)
+          `Injecting ${servers.length} MCP server(s) into session/new`,
+          servers.map((server) => `${server.name}:${'type' in server ? server.type : 'stdio'}`)
         );
       }
 
-      return sessionMcpServers;
+      return servers;
     } catch (error) {
       console.warn(
         `[ACP ${this.extra.backend}] Failed to load built-in MCP config for session/new:`,
@@ -1542,7 +1593,10 @@ export class AcpAgent {
    */
   async setMode(mode: string): Promise<{ success: boolean; error?: string }> {
     if (!this.connection.isConnected || !this.connection.hasActiveSession) {
-      return { success: false, error: 'No active session. Please send a message first to establish a session.' };
+      // No live session — persist the mode so it takes effect on next session start.
+      // AcpAgentManager reads extra.sessionMode during startSession().
+      this.extra.sessionMode = mode;
+      return { success: true };
     }
     try {
       await this.connection.setSessionMode(mode);
