@@ -12,7 +12,8 @@ import type { ICodexMessageEmitter } from '@process/agent/codex/messaging/CodexM
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
 import { NavigationInterceptor } from '@/common/chat/navigation';
 import { ConfigStorage } from '@/common/config/storage';
-import type { McpToolUiMeta } from '@/common/config/storage';
+import type { IMcpServer, McpToolUiMeta } from '@/common/config/storage';
+import { mcpService } from '@process/services/mcpServices/McpService';
 
 /**
  * Metadata for exec approval requests (for ApprovalStore)
@@ -20,6 +21,71 @@ import type { McpToolUiMeta } from '@/common/config/storage';
 export interface ExecRequestMeta {
   command: string | string[];
   cwd?: string;
+}
+
+type ResolveMcpToolUiMetaDeps = {
+  configStorage?: Pick<typeof ConfigStorage, 'get' | 'set'>;
+  testConnection?: typeof mcpService.testMcpConnection;
+  now?: () => number;
+};
+
+function findToolUiMeta(server: IMcpServer, toolName: string): McpToolUiMeta | undefined {
+  return server.tools?.find((tool) => tool.name === toolName)?._meta?.ui;
+}
+
+export async function resolveMcpToolUiMeta(
+  serverName: string,
+  toolName: string,
+  deps: ResolveMcpToolUiMetaDeps = {}
+): Promise<McpToolUiMeta | undefined> {
+  if (!serverName || !toolName) return undefined;
+
+  const {
+    configStorage = ConfigStorage,
+    testConnection = (server) => mcpService.testMcpConnection(server),
+    now = () => Date.now(),
+  } = deps;
+
+  try {
+    const servers = await configStorage.get('mcp.config');
+    if (!servers?.length) return undefined;
+
+    const server = servers.find((candidate) => candidate.name === serverName);
+    if (!server) return undefined;
+
+    const storedUiMeta = findToolUiMeta(server, toolName);
+    if (storedUiMeta) return storedUiMeta;
+
+    const connectionResult = await testConnection(server);
+    const fetchedTools = connectionResult.tools;
+    if (!connectionResult.success || !fetchedTools?.length) return undefined;
+
+    const fetchedUiMeta = fetchedTools.find((tool) => tool.name === toolName)?._meta?.ui;
+    if (!fetchedUiMeta) return undefined;
+
+    const timestamp = now();
+    const updatedServers = servers.map((candidate) =>
+      candidate.name === serverName
+        ? {
+            ...candidate,
+            tools: fetchedTools,
+            status: 'connected' as const,
+            lastConnected: timestamp,
+            updatedAt: timestamp,
+          }
+        : candidate
+    );
+
+    try {
+      await configStorage.set('mcp.config', updatedServers);
+    } catch {
+      // Ignore persistence failures and still return the live-discovered UI metadata.
+    }
+
+    return fetchedUiMeta;
+  } catch {
+    return undefined;
+  }
 }
 
 export class CodexToolHandlers {
@@ -31,6 +97,7 @@ export class CodexToolHandlers {
   private toolRegistry: ToolRegistry;
   private activeToolGroups: Map<string, string> = new Map(); // callId -> msg_id mapping
   private activeToolCalls: Map<string, string> = new Map(); // callId -> msg_id mapping for tool calls
+  private activeMcpToolCalls: Map<string, string[]> = new Map(); // server/tool key -> ordered call ids
 
   constructor(
     private conversation_id: string,
@@ -196,6 +263,8 @@ export class CodexToolHandlers {
     // 使用类型断言，因为 call_id 可能在运行时数据中存在但不在类型定义中
     const callId = (msg as unknown as { call_id?: string }).call_id || `mcp_${toolName}_${uuid()}`;
     const title = this.formatMcpInvocation(inv);
+    const serverName = String(inv.server || '');
+    const mcpToolKey = this.getMcpToolKey(serverName, toolName);
 
     // Intercept chrome-devtools navigation tools using unified NavigationInterceptor
     // 使用统一的 NavigationInterceptor 拦截 chrome-devtools 导航工具
@@ -215,11 +284,12 @@ export class CodexToolHandlers {
 
     // Add to pending confirmations
     this.pendingConfirmations.add(callId);
+    if (mcpToolKey) this.enqueueMcpToolCall(mcpToolKey, callId);
 
     // Look up UI metadata from stored MCP server config
     // 从存储的 MCP 服务器配置中查找 UI 元数据
     void this.lookupUiMeta(String(inv.server || ''), toolName).then((uiMeta) => {
-      const enrichedMsg = uiMeta ? { ...msg, serverName: String(inv.server || ''), uiMeta } : msg;
+      const enrichedMsg = uiMeta ? { ...msg, serverName, uiMeta } : { ...msg, serverName };
 
       // Use new CodexToolCall approach with subtype and original data
       this.emitCodexToolCall(callId, {
@@ -236,8 +306,13 @@ export class CodexToolHandlers {
   handleMcpToolCallEnd(msg: Extract<CodexEventMsg, { type: 'mcp_tool_call_end' }>) {
     // MCP events don't have call_id, generate one based on tool name
     const inv = msg.invocation || {};
-    const toolName = inv.tool || inv.name || inv.method || 'unknown';
-    const callId = `mcp_${toolName}_${uuid()}`;
+    const toolName = String(inv.tool || inv.name || inv.method || 'unknown');
+    const serverName = String(inv.server || '');
+    const mcpToolKey = this.getMcpToolKey(serverName, toolName);
+    const callId =
+      (msg as unknown as { call_id?: string }).call_id ||
+      (mcpToolKey ? this.dequeueMcpToolCall(mcpToolKey) : undefined) ||
+      `mcp_${toolName}_${uuid()}`;
     const title = this.formatMcpInvocation(inv);
     const result = msg.result;
 
@@ -251,7 +326,7 @@ export class CodexToolHandlers {
 
     // Look up UI metadata from stored MCP server config
     void this.lookupUiMeta(String(inv.server || ''), String(toolName)).then((uiMeta) => {
-      const enrichedMsg = uiMeta ? { ...msg, uiMeta } : msg;
+      const enrichedMsg = uiMeta ? { ...msg, serverName, uiMeta } : { ...msg, serverName };
 
       // Use new CodexToolCall approach with subtype and original data
       this.emitCodexToolCall(callId, {
@@ -361,22 +436,32 @@ export class CodexToolHandlers {
     return `MCP Tool: ${name}`;
   }
 
+  private getMcpToolKey(serverName: string, toolName: string): string | undefined {
+    if (!serverName || !toolName) return undefined;
+    return `${serverName}::${toolName}`;
+  }
+
+  private enqueueMcpToolCall(key: string, callId: string): void {
+    const queue = this.activeMcpToolCalls.get(key) || [];
+    queue.push(callId);
+    this.activeMcpToolCalls.set(key, queue);
+  }
+
+  private dequeueMcpToolCall(key: string): string | undefined {
+    const queue = this.activeMcpToolCalls.get(key);
+    if (!queue?.length) return undefined;
+    const callId = queue.shift();
+    if (queue.length === 0) this.activeMcpToolCalls.delete(key);
+    else this.activeMcpToolCalls.set(key, queue);
+    return callId;
+  }
+
   /**
    * Look up MCP Apps UI metadata from stored server config.
    * Matches the server name and tool name against configured MCP servers.
    */
   private async lookupUiMeta(serverName: string, toolName: string): Promise<McpToolUiMeta | undefined> {
-    if (!serverName || !toolName) return undefined;
-    try {
-      const servers = await ConfigStorage.get('mcp.config');
-      if (!servers) return undefined;
-      const server = servers.find((s) => s.name === serverName);
-      if (!server?.tools) return undefined;
-      const tool = server.tools.find((t) => t.name === toolName);
-      return tool?._meta?.ui;
-    } catch {
-      return undefined;
-    }
+    return resolveMcpToolUiMeta(serverName, toolName);
   }
 
   private summarizePatch(changes: Record<string, FileChange> | undefined): string {
@@ -452,6 +537,7 @@ export class CodexToolHandlers {
     this.pendingConfirmations.clear();
     this.activeToolGroups.clear();
     this.activeToolCalls.clear();
+    this.activeMcpToolCalls.clear();
   }
 
   private isValidBase64(str: string): boolean {

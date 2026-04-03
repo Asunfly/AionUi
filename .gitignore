@@ -200,3 +200,4 @@ resources/bundled-bun
 dist-server/
 .omc/
 .superset/
+.playwright-mcp/

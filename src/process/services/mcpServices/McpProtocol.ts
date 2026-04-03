@@ -511,10 +511,13 @@ export abstract class AbstractMcpAgent implements IMcpProtocol {
         };
       }
 
+      const sessionId = initResponse.headers.get('mcp-session-id');
       const toolsResponse = await fetch(transport.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
           ...transport.headers,
         },
         body: JSON.stringify({

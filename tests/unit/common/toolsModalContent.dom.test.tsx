@@ -287,6 +287,15 @@ vi.mock('@/renderer/hooks/mcp', () => ({
     checkOAuthStatus: testState.mockCheckOAuthStatus,
     login: testState.mockLogin,
   }),
+  useMcpAppsConfig: () => ({
+    enabled: false,
+    trustList: [],
+    loaded: true,
+    setEnabled: vi.fn(),
+    addTrust: vi.fn(),
+    removeTrust: vi.fn(),
+    isServerTrusted: () => false,
+  }),
 }));
 
 import ToolsModalContent from '@/renderer/components/settings/SettingsModal/contents/ToolsModalContent';
@@ -316,7 +325,10 @@ describe('ToolsModalContent image generation status refresh', () => {
   it('refreshes image generation agent status only after sync completes when enabling the builtin MCP server', async () => {
     render(<ToolsModalContent />);
 
-    const toggle = (await screen.findAllByRole('switch', { name: 'switch' }))[0];
+    const toggles = await screen.findAllByRole('switch', { name: 'switch' });
+    // toggles[0] = MCP Apps toggle, toggles[1] = image generation toggle, toggles[2+] = others
+    // The image generation toggle is the second one (index 1)
+    const toggle = toggles[1];
     expect(toggle).not.toBeDisabled();
 
     fireEvent.click(toggle);
