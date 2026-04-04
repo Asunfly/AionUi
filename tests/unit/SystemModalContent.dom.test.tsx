@@ -364,6 +364,35 @@ describe('SystemModalContent', () => {
 
   it('should toggle DevTools when button is clicked', async () => {
     mockIsDevToolsOpened.mockResolvedValue(false);
+    const openPromise = Promise.resolve(true);
+    mockOpenDevTools.mockReturnValue(openPromise);
+
+    render(<SystemModalContent />);
+
+    await waitFor(() => {
+      expect(screen.getByText('settings.openDevTools')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('settings.openDevTools'));
+      await openPromise;
+    });
+
+    expect(mockOpenDevTools).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getByText('settings.closeDevTools')).toBeInTheDocument();
+    });
+  });
+
+  it('should not let stale initial DevTools state overwrite a user toggle', async () => {
+    let resolveInitialState: ((value: boolean) => void) | null = null;
+    mockIsDevToolsOpened.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveInitialState = resolve;
+        })
+    );
     mockOpenDevTools.mockResolvedValue(true);
 
     render(<SystemModalContent />);
@@ -376,11 +405,16 @@ describe('SystemModalContent', () => {
       fireEvent.click(screen.getByText('settings.openDevTools'));
     });
 
-    expect(mockOpenDevTools).toHaveBeenCalled();
-
     await waitFor(() => {
       expect(screen.getByText('settings.closeDevTools')).toBeInTheDocument();
     });
+
+    await act(async () => {
+      resolveInitialState?.(false);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('settings.closeDevTools')).toBeInTheDocument();
   });
 
   it('should update DevTools state via event listener', async () => {
