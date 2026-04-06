@@ -9,7 +9,12 @@ const sendToolResultMock = vi.fn();
 const teardownResourceMock = vi.fn();
 
 let shouldAutoInitialize = true;
-let activeBridge: { oninitialized?: () => void } | null = null;
+let activeBridge:
+  | {
+      oninitialized?: () => void;
+      onsizechange?: (params: { width?: number; height?: number }) => void;
+    }
+  | null = null;
 let hostConnected = false;
 
 const simulateAppInitializeAttempt = () => {
@@ -18,6 +23,10 @@ const simulateAppInitializeAttempt = () => {
   }
 
   activeBridge.oninitialized?.();
+};
+
+const simulateAppResize = (params: { width?: number; height?: number }) => {
+  activeBridge?.onsizechange?.(params);
 };
 
 vi.mock('@/common', () => ({
@@ -81,7 +90,9 @@ vi.mock('@modelcontextprotocol/ext-apps/app-bridge', () => {
   };
 });
 
-import McpAppContainer from '@/renderer/pages/conversation/Messages/codex/ToolCallComponent/McpAppContainer';
+import McpAppContainer, {
+  __resetMcpAppContainerCachesForTest,
+} from '@/renderer/pages/conversation/Messages/codex/ToolCallComponent/McpAppContainer';
 
 const flushPromises = async () => {
   await act(async () => {
@@ -93,6 +104,7 @@ describe('McpAppContainer init timeout', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    __resetMcpAppContainerCachesForTest();
     shouldAutoInitialize = true;
     activeBridge = null;
     hostConnected = false;
@@ -125,6 +137,101 @@ describe('McpAppContainer init timeout', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
+  });
+
+  it('deduplicates identical UI resource reads across concurrent containers', async () => {
+    render(
+      <>
+        <McpAppContainer
+          serverName='drawio'
+          resourceUri='ui://drawio/mcp-app.html'
+          transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        />
+        <McpAppContainer
+          serverName='drawio'
+          resourceUri='ui://drawio/mcp-app.html'
+          transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        />
+      </>
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(readUiResourceInvokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores the last known size when the same app remounts', async () => {
+    const firstRender = render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        toolArguments={{ xml: '<mxGraphModel id="remember" />' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    act(() => {
+      simulateAppResize({ width: 800, height: 560 });
+    });
+
+    firstRender.unmount();
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        toolArguments={{ xml: '<mxGraphModel id="remember" />' }}
+      />
+    );
+
+    await flushPromises();
+
+    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
+
+    expect(Number.parseInt(iframe.style.height, 10)).toBe(560);
+    expect(iframe.style.width).toBe('800px');
+  });
+
+  it('does not restore an oversized remembered height for wide layouts on remount', async () => {
+    const firstRender = render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        toolArguments={{ xml: '<mxGraphModel id="wide-remember" />' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    act(() => {
+      simulateAppResize({ width: 1400, height: 760 });
+    });
+
+    firstRender.unmount();
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        toolArguments={{ xml: '<mxGraphModel id="wide-remember" />' }}
+      />
+    );
+
+    await flushPromises();
+
+    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
+
+    expect(Number.parseInt(iframe.style.height, 10)).toBeLessThan(760);
+    expect(iframe.style.width).toBe('1400px');
   });
 
   it('does not show timeout after the app initializes successfully', async () => {
@@ -184,6 +291,177 @@ describe('McpAppContainer init timeout', () => {
     expect(sendToolResultMock).toHaveBeenCalledWith({
       content: [{ type: 'text', text: 'diagram created through bridge' }],
     });
+  });
+
+  it('caps shell height to the available viewport instead of letting the host grow indefinitely', async () => {
+    shouldAutoInitialize = false;
+    vi.stubGlobal('innerHeight', 620);
+    vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 120,
+      top: 120,
+      left: 0,
+      right: 800,
+      bottom: 520,
+      width: 800,
+      height: 400,
+      toJSON: () => ({}),
+    });
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
+    const scrollShell = screen.getByTestId('mcp-app-scroll-shell') as HTMLDivElement;
+
+    act(() => {
+      simulateAppResize({ height: 1200 });
+    });
+
+    expect(Number.parseInt(scrollShell.style.maxHeight, 10)).toBeLessThan(800);
+    expect(Number.parseInt(iframe.style.height, 10)).toBeGreaterThan(Number.parseInt(scrollShell.style.maxHeight, 10));
+  });
+
+  it('expands iframe width to match wide app content', async () => {
+    shouldAutoInitialize = false;
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
+
+    act(() => {
+      simulateAppResize({ width: 1400 });
+    });
+
+    expect(iframe.style.width).toBe('1400px');
+  });
+
+  it('uses a modest fallback height for small reported visualizations', async () => {
+    shouldAutoInitialize = false;
+    vi.stubGlobal('innerHeight', 900);
+    vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 140,
+      top: 140,
+      left: 0,
+      right: 800,
+      bottom: 540,
+      width: 800,
+      height: 400,
+      toJSON: () => ({}),
+    });
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
+    const scrollShell = screen.getByTestId('mcp-app-scroll-shell') as HTMLDivElement;
+
+    act(() => {
+      simulateAppResize({ width: 800, height: 400 });
+    });
+
+    expect(Number.parseInt(iframe.style.height, 10)).toBeGreaterThan(400);
+    expect(Number.parseInt(iframe.style.height, 10)).toBeLessThanOrEqual(Number.parseInt(scrollShell.style.maxHeight, 10));
+    expect(scrollShell.style.overflowY).toBe('auto');
+    expect(scrollShell.style.overflowX).toBe('auto');
+  });
+
+  it('does not inflate the initial height of a wide visualization', async () => {
+    shouldAutoInitialize = false;
+    vi.stubGlobal('innerHeight', 900);
+    vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 140,
+      top: 140,
+      left: 0,
+      right: 800,
+      bottom: 540,
+      width: 800,
+      height: 400,
+      toJSON: () => ({}),
+    });
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
+
+    act(() => {
+      simulateAppResize({ width: 1400, height: 400 });
+    });
+
+    expect(Number.parseInt(iframe.style.height, 10)).toBe(400);
+  });
+
+  it('caps shell growth for oversized visualizations instead of expanding indefinitely', async () => {
+    shouldAutoInitialize = false;
+    vi.stubGlobal('innerHeight', 1200);
+    vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 120,
+      top: 120,
+      left: 0,
+      right: 800,
+      bottom: 520,
+      width: 800,
+      height: 400,
+      toJSON: () => ({}),
+    });
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
+    const scrollShell = screen.getByTestId('mcp-app-scroll-shell') as HTMLDivElement;
+
+    act(() => {
+      simulateAppResize({ width: 1600, height: 4000 });
+    });
+
+    expect(Number.parseInt(scrollShell.style.maxHeight, 10)).toBeLessThan(1000);
+    expect(Number.parseInt(iframe.style.height, 10)).toBeLessThanOrEqual(1600);
   });
 
   it('does not lose initialize messages sent before the iframe load event', async () => {
