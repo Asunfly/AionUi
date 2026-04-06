@@ -70,11 +70,109 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
   const bridgeRef = useRef<AppBridge | null>(null);
   const blobUrlRef = useRef<string | null>(null);
   const sentResultRef = useRef(false);
+  const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initializedRef = useRef(false);
 
   const [state, setState] = useState<ContainerState>('loading');
   const [errorMsg, setErrorMsg] = useState('');
   const [iframeHeight, setIframeHeight] = useState(300);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
+
+  const clearInitTimeout = useCallback(() => {
+    if (initTimeoutRef.current) {
+      clearTimeout(initTimeoutRef.current);
+      initTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startInitTimeout = useCallback(() => {
+    clearInitTimeout();
+    initTimeoutRef.current = setTimeout(() => {
+      if (!initializedRef.current) {
+        setState('error');
+        setErrorMsg(t('mcp.apps.initTimeout'));
+      }
+    }, INIT_TIMEOUT);
+  }, [clearInitTimeout, t]);
+
+  const connectBridge = useCallback(
+    (contentWindow: Window) => {
+      if (bridgeRef.current) return;
+
+      initializedRef.current = false;
+
+      const bridge = new AppBridge(null, HOST_INFO, HOST_CAPABILITIES);
+
+      bridge.onsizechange = (params) => {
+        if (params.height && params.height > 0) {
+          setIframeHeight(Math.min(params.height, MAX_HEIGHT));
+        }
+      };
+
+      bridge.onopenlink = async (params) => {
+        const url = params.url;
+        if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+        return {};
+      };
+
+      bridge.onrequestteardown = () => {
+        return;
+      };
+
+      bridge.oncalltool = async (params) => {
+        const response = await ipcBridge.mcpService.callMcpTool.invoke({
+          serverName,
+          toolName: params.name,
+          transport,
+          arguments: params.arguments as Record<string, unknown> | undefined,
+        });
+        if (response.success && response.data) {
+          return response.data as { content: Array<{ type: 'text'; text: string }> };
+        }
+        return { content: [{ type: 'text' as const, text: response.msg || 'Tool call failed' }], isError: true };
+      };
+
+      bridge.oninitialized = () => {
+        initializedRef.current = true;
+        clearInitTimeout();
+        setState('connected');
+
+        if (toolArguments) {
+          void bridge.sendToolInput({ arguments: toolArguments });
+        }
+
+        if (toolResult !== undefined && !sentResultRef.current) {
+          sentResultRef.current = true;
+          void bridge.sendToolResult({
+            content:
+              typeof toolResult === 'string'
+                ? [{ type: 'text', text: toolResult }]
+                : [{ type: 'text', text: JSON.stringify(toolResult) }],
+          });
+        }
+      };
+
+      bridgeRef.current = bridge;
+
+      const pmTransport = new PostMessageTransport(contentWindow, contentWindow);
+      void bridge.connect(pmTransport).catch((error) => {
+        clearInitTimeout();
+        bridgeRef.current = null;
+        setState('error');
+        setErrorMsg(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [clearInitTimeout, serverName, toolArguments, toolResult, transport]
+  );
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return;
+
+    connectBridge(iframe.contentWindow);
+  }, [connectBridge]);
 
   // Fetch UI resource HTML and create blob URL
   useEffect(() => {
@@ -102,8 +200,10 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
         blobUrlRef.current = url;
         setIframeSrc(url);
         setState('ready');
+        startInitTimeout();
       } catch (err) {
         if (cancelled) return;
+        clearInitTimeout();
         setState('error');
         setErrorMsg(err instanceof Error ? err.message : String(err));
       }
@@ -112,86 +212,15 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [serverName, resourceUri, transport, csp, t]);
+  }, [clearInitTimeout, csp, resourceUri, serverName, startInitTimeout, t, transport]);
 
   // Initialize AppBridge after iframe loads
   const handleIframeLoad = useCallback(() => {
     const iframe = iframeRef.current;
-    if (!iframe?.contentWindow || bridgeRef.current) return;
+    if (!iframe?.contentWindow) return;
 
-    const bridge = new AppBridge(null, HOST_INFO, HOST_CAPABILITIES);
-
-    // Handle size changes from the app
-    bridge.onsizechange = (params) => {
-      if (params.height && params.height > 0) {
-        setIframeHeight(Math.min(params.height, MAX_HEIGHT));
-      }
-    };
-
-    // Handle link open requests
-    bridge.onopenlink = async (params) => {
-      const url = params.url;
-      // Only allow https URLs for security
-      if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
-        window.open(url, '_blank', 'noopener,noreferrer');
-      }
-      return {};
-    };
-
-    // Handle teardown requests from the app
-    bridge.onrequestteardown = () => {
-      // App requested to close itself — we keep the iframe but could show a placeholder
-    };
-
-    // Handle reverse tool calls (iframe → Host → Server)
-    bridge.oncalltool = async (params) => {
-      const response = await ipcBridge.mcpService.callMcpTool.invoke({
-        serverName,
-        toolName: params.name,
-        transport,
-        arguments: params.arguments as Record<string, unknown> | undefined,
-      });
-      if (response.success && response.data) {
-        return response.data as { content: Array<{ type: 'text'; text: string }> };
-      }
-      return { content: [{ type: 'text' as const, text: response.msg || 'Tool call failed' }], isError: true };
-    };
-
-    bridge.oninitialized = () => {
-      setState('connected');
-
-      // Send tool input if available
-      if (toolArguments) {
-        void bridge.sendToolInput({ arguments: toolArguments });
-      }
-
-      // Send tool result if already available
-      if (toolResult !== undefined && !sentResultRef.current) {
-        sentResultRef.current = true;
-        void bridge.sendToolResult({
-          content:
-            typeof toolResult === 'string'
-              ? [{ type: 'text', text: toolResult }]
-              : [{ type: 'text', text: JSON.stringify(toolResult) }],
-        });
-      }
-    };
-
-    bridgeRef.current = bridge;
-
-    const pmTransport = new PostMessageTransport(iframe.contentWindow, iframe.contentWindow);
-    void bridge.connect(pmTransport);
-
-    // Timeout if app doesn't initialize
-    const timeout = setTimeout(() => {
-      if (state === 'ready') {
-        setState('error');
-        setErrorMsg(t('mcp.apps.initTimeout'));
-      }
-    }, INIT_TIMEOUT);
-
-    return () => clearTimeout(timeout);
-  }, [toolArguments, toolResult, state, t]);
+    connectBridge(iframe.contentWindow);
+  }, [connectBridge]);
 
   // Send tool result when it arrives after initialization
   useEffect(() => {
@@ -209,6 +238,7 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      clearInitTimeout();
       if (bridgeRef.current) {
         void bridgeRef.current.teardownResource({ reason: 'unmount' }).catch(() => {});
         bridgeRef.current = null;
@@ -218,7 +248,7 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
         blobUrlRef.current = null;
       }
     };
-  }, []);
+  }, [clearInitTimeout]);
 
   if (state === 'error') {
     return <Alert type='error' content={errorMsg || t('mcp.apps.error')} className='mt-2' />;
@@ -231,23 +261,21 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
           <Spin tip={t('mcp.apps.loading')} />
         </div>
       )}
-      {iframeSrc && (
-        <iframe
-          ref={iframeRef}
-          src={iframeSrc}
-          sandbox='allow-scripts'
-          onLoad={handleIframeLoad}
-          className='w-full border-none'
-          style={{
-            height: `${iframeHeight}px`,
-            maxHeight: `${MAX_HEIGHT}px`,
-            opacity: state === 'connected' ? 1 : 0,
-            transition: 'opacity 200ms ease-in',
-            backgroundColor: 'transparent',
-          }}
-          title={`MCP App: ${serverName}`}
-        />
-      )}
+      <iframe
+        ref={iframeRef}
+        src={iframeSrc || 'about:blank'}
+        sandbox='allow-scripts'
+        onLoad={handleIframeLoad}
+        className='w-full border-none'
+        style={{
+          height: `${iframeHeight}px`,
+          maxHeight: `${MAX_HEIGHT}px`,
+          opacity: state === 'connected' ? 1 : 0,
+          transition: 'opacity 200ms ease-in',
+          backgroundColor: 'transparent',
+        }}
+        title={`MCP App: ${serverName}`}
+      />
     </div>
   );
 };

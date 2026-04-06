@@ -24,13 +24,20 @@ import MarkdownView from '@renderer/components/Markdown';
  * Returns { serverName, toolName } if matched, undefined otherwise.
  */
 function parseMcpToolTitle(title: string): { serverName: string; toolName: string } | undefined {
+  const normalizedTitle = title.replace(/^(?:MCP\s+Tool|Tool|工具)\s*[:：]\s*/i, '').trim();
+
+  const slashMatch = normalizedTitle.match(/^([^/]+)\/([^/]+)$/);
+  if (slashMatch) {
+    return { serverName: slashMatch[1], toolName: slashMatch[2] };
+  }
+
   // Format: "mcp__<server-name>__<tool-name>" or title may contain " (server MCP Server)" suffix
-  const match = title.match(/^mcp__([^_]+(?:__[^_]+)*?)__([^_]+(?:_[^_]+)*)$/);
+  const match = normalizedTitle.match(/^mcp__([^_]+(?:__[^_]+)*?)__([^_]+(?:_[^_]+)*)$/);
   if (match) {
     return { serverName: match[1], toolName: match[2] };
   }
   // Also handle format with parenthetical server info: "tool_name (server MCP Server)"
-  const parenMatch = title.match(/^(.+?)\s+\((.+?)\s+MCP\s+Server\)$/i);
+  const parenMatch = normalizedTitle.match(/^(.+?)\s+\((.+?)\s+MCP\s+Server\)$/i);
   if (parenMatch) {
     return { serverName: parenMatch[2], toolName: parenMatch[1] };
   }
@@ -199,7 +206,14 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
   const { toolCallId, kind, title, status, rawInput, content: diffContent } = update;
 
   // Detect MCP tool calls by title format: "mcp__<server>__<tool>"
-  const mcpInfo = useMemo(() => parseMcpToolTitle(title || ''), [title]);
+  const mcpInfo = useMemo(() => {
+    const serverName = typeof rawInput?.server === 'string' ? rawInput.server : undefined;
+    const toolName = typeof rawInput?.tool === 'string' ? rawInput.tool : undefined;
+    if (serverName && toolName) {
+      return { serverName, toolName };
+    }
+    return parseMcpToolTitle(title || '');
+  }, [rawInput, title]);
 
   // Extract tool result text from content items for MCP Apps
   const toolResultText = useMemo(() => {
@@ -237,7 +251,11 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
             <AcpMcpAppSection
               serverName={mcpInfo.serverName}
               toolName={mcpInfo.toolName}
-              rawInput={rawInput}
+              rawInput={
+                rawInput?.arguments && typeof rawInput.arguments === 'object' && !Array.isArray(rawInput.arguments)
+                  ? (rawInput.arguments as Record<string, unknown>)
+                  : rawInput
+              }
               toolResult={toolResultText}
             />
           )}

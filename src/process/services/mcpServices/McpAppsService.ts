@@ -11,9 +11,9 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { getEnhancedEnv, resolveNpxPath } from '@/process/utils/shellEnv';
+import { mainLog } from '@process/utils/mainLogger';
 
-/** Expected MIME type for MCP App UI resources */
-const MCP_APP_MIME_TYPE = 'text/html';
+const MCP_APPS_SERVICE_TAG = '[McpAppsService]';
 
 type McpUiResourceResult = {
   html: string;
@@ -24,6 +24,53 @@ type CachedConnection = {
   client: Client;
   createdAt: number;
 };
+
+function summarizeValue(value: unknown, maxLength = 240): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (!text) return 'empty';
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function summarizeTransport(transport: IMcpServer['transport']): Record<string, unknown> {
+  switch (transport.type) {
+    case 'stdio':
+      return {
+        type: transport.type,
+        command: transport.command,
+        args: transport.args || [],
+      };
+    case 'sse':
+    case 'streamable_http':
+    case 'http':
+      return {
+        type: transport.type,
+        url: transport.url,
+      };
+    default:
+      return { type: (transport as { type?: string }).type || 'unknown' };
+  }
+}
+
+function summarizeToolResult(result: unknown): Record<string, unknown> {
+  if (!result || typeof result !== 'object') {
+    return { preview: summarizeValue(result) };
+  }
+
+  const value = result as {
+    content?: Array<{ type?: string }>;
+    isError?: boolean;
+    structuredContent?: unknown;
+  };
+
+  return {
+    isError: value.isError === true,
+    contentTypes: Array.isArray(value.content) ? value.content.map((item) => item.type || 'unknown') : [],
+    hasStructuredContent: value.structuredContent !== undefined,
+    preview: summarizeValue(result),
+  };
+}
 
 /**
  * Service for MCP Apps UI resource fetching.
@@ -46,6 +93,11 @@ export class McpAppsService {
     resourceUri: string,
     transport: IMcpServer['transport']
   ): Promise<McpUiResourceResult> {
+    mainLog(MCP_APPS_SERVICE_TAG, 'readUiResource.start', {
+      serverName,
+      resourceUri,
+      transport: summarizeTransport(transport),
+    });
     const client = await this.getOrCreateClient(serverName, transport);
 
     const response = await client.readResource({ uri: resourceUri });
@@ -54,6 +106,14 @@ export class McpAppsService {
     if (!content || !('text' in content)) {
       throw new Error(`No text content returned for UI resource: ${resourceUri}`);
     }
+
+    mainLog(MCP_APPS_SERVICE_TAG, 'readUiResource.response', {
+      serverName,
+      resourceUri,
+      contentCount: response.contents.length,
+      mimeType: 'mimeType' in content ? content.mimeType : undefined,
+      htmlLength: content.text.length,
+    });
 
     return {
       html: content.text as string,
@@ -72,8 +132,19 @@ export class McpAppsService {
     transport: IMcpServer['transport'],
     args?: Record<string, unknown>
   ): Promise<unknown> {
+    mainLog(MCP_APPS_SERVICE_TAG, 'callTool.start', {
+      serverName,
+      toolName,
+      transport: summarizeTransport(transport),
+      arguments: summarizeValue(args),
+    });
     const client = await this.getOrCreateClient(serverName, transport);
     const result = await client.callTool({ name: toolName, arguments: args || {} });
+    mainLog(MCP_APPS_SERVICE_TAG, 'callTool.response', {
+      serverName,
+      toolName,
+      result: summarizeToolResult(result),
+    });
     return result;
   }
 
@@ -103,11 +174,19 @@ export class McpAppsService {
   private async getOrCreateClient(serverName: string, transport: IMcpServer['transport']): Promise<Client> {
     const cached = this.connections.get(serverName);
     if (cached && Date.now() - cached.createdAt < this.maxConnectionAge) {
+      mainLog(MCP_APPS_SERVICE_TAG, 'client.reuse', {
+        serverName,
+        ageMs: Date.now() - cached.createdAt,
+      });
       return cached.client;
     }
 
     // Close stale connection if any
     if (cached) {
+      mainLog(MCP_APPS_SERVICE_TAG, 'client.stale', {
+        serverName,
+        ageMs: Date.now() - cached.createdAt,
+      });
       await this.disconnect(serverName);
     }
 
@@ -127,7 +206,12 @@ export class McpAppsService {
     );
 
     const mcpTransport = this.createTransport(transport);
+    mainLog(MCP_APPS_SERVICE_TAG, 'client.connect.start', {
+      serverName,
+      transport: summarizeTransport(transport),
+    });
     await client.connect(mcpTransport);
+    mainLog(MCP_APPS_SERVICE_TAG, 'client.connect.success', { serverName });
 
     this.connections.set(serverName, { client, createdAt: Date.now() });
     return client;

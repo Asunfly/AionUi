@@ -8,8 +8,18 @@ import { ipcBridge } from '@/common';
 import { mcpService } from '@process/services/mcpServices/McpService';
 import { mcpOAuthService } from '@process/services/mcpServices/McpOAuthService';
 import { McpAppsService } from '@process/services/mcpServices/McpAppsService';
+import { mainError, mainLog } from '@process/utils/mainLogger';
 
 const mcpAppsService = new McpAppsService();
+const MCP_APP_BRIDGE_TAG = '[McpAppBridge]';
+
+function summarizeValue(value: unknown, maxLength = 200): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  if (!text) return 'empty';
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
 
 export function initMcpBridge(): void {
   // MCP 服务相关 IPC 处理程序
@@ -113,9 +123,24 @@ export function initMcpBridge(): void {
   // MCP Apps — UI resource fetching
   ipcBridge.mcpService.readUiResource.provider(async ({ serverName, resourceUri, transport }) => {
     try {
+      mainLog(MCP_APP_BRIDGE_TAG, 'readUiResource.request', {
+        serverName,
+        resourceUri,
+        transportType: transport.type,
+      });
       const result = await mcpAppsService.readUiResource(serverName, resourceUri, transport);
+      mainLog(MCP_APP_BRIDGE_TAG, 'readUiResource.success', {
+        serverName,
+        resourceUri,
+        htmlLength: result.html.length,
+      });
       return { success: true, data: result };
     } catch (error) {
+      mainError(MCP_APP_BRIDGE_TAG, 'readUiResource.error', {
+        serverName,
+        resourceUri,
+        error: error instanceof Error ? error.message : summarizeValue(error),
+      });
       return {
         success: false,
         msg: error instanceof Error ? error.message : 'Failed to read MCP Apps UI resource',
@@ -126,9 +151,25 @@ export function initMcpBridge(): void {
   // MCP Apps — reverse tool call (iframe → Host → Server)
   ipcBridge.mcpService.callMcpTool.provider(async ({ serverName, toolName, transport, arguments: args }) => {
     try {
+      mainLog(MCP_APP_BRIDGE_TAG, 'callMcpTool.request', {
+        serverName,
+        toolName,
+        transportType: transport.type,
+        arguments: summarizeValue(args),
+      });
       const result = await mcpAppsService.callTool(serverName, toolName, transport, args);
+      mainLog(MCP_APP_BRIDGE_TAG, 'callMcpTool.success', {
+        serverName,
+        toolName,
+        result: summarizeValue(result),
+      });
       return { success: true, data: result };
     } catch (error) {
+      mainError(MCP_APP_BRIDGE_TAG, 'callMcpTool.error', {
+        serverName,
+        toolName,
+        error: error instanceof Error ? error.message : summarizeValue(error),
+      });
       return {
         success: false,
         msg: error instanceof Error ? error.message : 'Failed to call MCP tool',

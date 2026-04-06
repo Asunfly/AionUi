@@ -1,8 +1,14 @@
 import type { BadgeProps } from '@arco-design/web-react';
-import { Badge } from '@arco-design/web-react';
+import { Alert, Badge, Button } from '@arco-design/web-react';
 import { IconDown, IconRight } from '@arco-design/web-react/icon';
 import React, { useEffect, useMemo, useState } from 'react';
 import type { IMessageAcpToolCall, IMessageToolGroup } from '@/common/chat/chatLib';
+import { ConfigStorage } from '@/common/config/storage';
+import type { IMcpServer } from '@/common/config/storage';
+import { useMcpAppsConfig } from '@renderer/hooks/mcp/useMcpAppsConfig';
+import { getMcpAppRenderState } from '@renderer/pages/conversation/Messages/codex/ToolCallComponent/McpToolDisplay';
+import McpAppContainer from '@renderer/pages/conversation/Messages/codex/ToolCallComponent/McpAppContainer';
+import { useTranslation } from 'react-i18next';
 import './MessageToolGroupSummary.css';
 
 type ToolItem = {
@@ -14,6 +20,13 @@ type ToolItem = {
   output?: string;
 };
 
+type SummarizedMcpAppCandidate = {
+  serverName: string;
+  toolName: string;
+  toolArguments?: Record<string, unknown>;
+  toolResult?: unknown;
+};
+
 const formatValue = (value: unknown): string => {
   if (typeof value === 'string') return value;
   try {
@@ -23,11 +36,145 @@ const formatValue = (value: unknown): string => {
   }
 };
 
+const normalizeMcpToolIdentityValue = (value: string): string =>
+  value.replace(/^(?:MCP\s+Tool|Tool|工具)\s*[:：]\s*/i, '').trim();
+
+const extractAcpMcpInvocation = (
+  rawInput?: Record<string, unknown>
+): { serverName: string; toolName: string; toolArguments?: Record<string, unknown> } | undefined => {
+  if (!rawInput) return undefined;
+
+  const serverName = typeof rawInput.server === 'string' ? rawInput.server : undefined;
+  const toolName = typeof rawInput.tool === 'string' ? rawInput.tool : undefined;
+  const toolArguments =
+    rawInput.arguments && typeof rawInput.arguments === 'object' && !Array.isArray(rawInput.arguments)
+      ? (rawInput.arguments as Record<string, unknown>)
+      : undefined;
+
+  if (!serverName || !toolName) return undefined;
+
+  return { serverName, toolName, toolArguments };
+};
+
 const getResultDisplayText = (resultDisplay: IMessageToolGroup['content'][0]['resultDisplay']): string | undefined => {
   if (!resultDisplay) return undefined;
   if (typeof resultDisplay === 'string') return resultDisplay;
   if ('fileDiff' in resultDisplay) return resultDisplay.fileDiff;
   if ('img_url' in resultDisplay) return resultDisplay.relative_path || resultDisplay.img_url;
+  return undefined;
+};
+
+const parseMcpToolIdentity = (value: string): { serverName: string; toolName: string } | undefined => {
+  const normalizedValue = normalizeMcpToolIdentityValue(value);
+
+  const slashMatch = normalizedValue.match(/^([^/]+)\/([^/]+)$/);
+  if (slashMatch) {
+    return { serverName: slashMatch[1], toolName: slashMatch[2] };
+  }
+
+  const separatorMatch = normalizedValue.match(/^([^_]+(?:__[^_]+)*?)__([^_]+(?:_[^_]+)*)$/);
+  if (separatorMatch) {
+    return { serverName: separatorMatch[1], toolName: separatorMatch[2] };
+  }
+
+  const parenMatch = normalizedValue.match(/^(.+?)\s+\((.+?)\s+MCP\s+Server\)$/i);
+  if (parenMatch) {
+    return { serverName: parenMatch[2], toolName: parenMatch[1] };
+  }
+
+  return undefined;
+};
+
+const parseObjectCandidate = (value: string): Record<string, unknown> | undefined => {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const parseToolArguments = (description?: string): Record<string, unknown> | undefined => {
+  if (!description) return undefined;
+
+  const trimmed = description.trim();
+  const direct = parseObjectCandidate(trimmed);
+  if (direct) return direct;
+
+  const lastLine = trimmed.split('\n').pop()?.trim();
+  if (!lastLine) return undefined;
+  return parseObjectCandidate(lastLine);
+};
+
+const getAcpToolResultText = (message: IMessageAcpToolCall): string | undefined => {
+  const content = message.content.update.content;
+  if (!content?.length) return undefined;
+
+  const texts = content
+    .map((item) => {
+      if (item.type === 'content' && item.content?.text) return item.content.text;
+      if (item.type === 'diff' && item.path) return `[diff] ${item.path}`;
+      return '';
+    })
+    .filter(Boolean);
+
+  return texts.length > 0 ? texts.join('\n') : undefined;
+};
+
+const getGeminiMcpAppCandidate = (message: IMessageToolGroup): SummarizedMcpAppCandidate | undefined => {
+  for (let index = message.content.length - 1; index >= 0; index -= 1) {
+    const tool = message.content[index];
+    if (tool.status !== 'Success' && tool.status !== 'Executing') continue;
+
+    const confirmedIdentity =
+      tool.confirmationDetails?.type === 'mcp'
+        ? {
+            serverName: tool.confirmationDetails.serverName,
+            toolName: tool.confirmationDetails.toolName,
+          }
+        : undefined;
+    const parsedIdentity = parseMcpToolIdentity(tool.name);
+    const identity = confirmedIdentity || parsedIdentity;
+
+    if (!identity) continue;
+
+    return {
+      ...identity,
+      toolArguments: parseToolArguments(tool.description),
+      toolResult: tool.resultDisplay,
+    };
+  }
+
+  return undefined;
+};
+
+const getAcpMcpAppCandidate = (message: IMessageAcpToolCall): SummarizedMcpAppCandidate | undefined => {
+  const { update } = message.content;
+  if (update.status !== 'completed' && update.status !== 'in_progress') return undefined;
+
+  const explicitInvocation = extractAcpMcpInvocation(update.rawInput);
+  const identity = explicitInvocation || parseMcpToolIdentity(update.title || '');
+  if (!identity) return undefined;
+
+  return {
+    ...identity,
+    toolArguments: explicitInvocation?.toolArguments || update.rawInput,
+    toolResult: getAcpToolResultText(message),
+  };
+};
+
+const getSummarizedMcpAppCandidate = (
+  messages: Array<IMessageToolGroup | IMessageAcpToolCall>
+): SummarizedMcpAppCandidate | undefined => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const candidate =
+      message.type === 'tool_group' ? getGeminiMcpAppCandidate(message) : getAcpMcpAppCandidate(message);
+    if (candidate) return candidate;
+  }
+
   return undefined;
 };
 
@@ -193,6 +340,94 @@ const ToolItemDetail: React.FC<{ item: ToolItem }> = ({ item }) => {
   );
 };
 
+const SummarizedMcpApp: React.FC<{ messages: Array<IMessageToolGroup | IMessageAcpToolCall> }> = ({ messages }) => {
+  const { t } = useTranslation();
+  const { enabled, isServerTrusted, setEnabled, addTrust } = useMcpAppsConfig();
+  const [serverConfig, setServerConfig] = useState<IMcpServer | null>(null);
+  const candidate = useMemo(() => getSummarizedMcpAppCandidate(messages), [messages]);
+
+  useEffect(() => {
+    if (!candidate?.serverName) {
+      setServerConfig(null);
+      return;
+    }
+
+    let cancelled = false;
+    void ConfigStorage.get('mcp.config').then((servers) => {
+      if (cancelled) return;
+      const found = servers?.find((server) => server.name === candidate.serverName) ?? null;
+      setServerConfig(found);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [candidate?.serverName]);
+
+  const uiMeta = serverConfig?.tools?.find((tool) => tool.name === candidate?.toolName)?._meta?.ui;
+  const renderState = getMcpAppRenderState({
+    hasUiMeta: Boolean(uiMeta?.resourceUri),
+    enabled,
+    hasServerConfig: Boolean(serverConfig),
+    trusted: serverConfig ? isServerTrusted(serverConfig.id) : false,
+  });
+
+  if (!candidate || renderState === 'raw') {
+    return null;
+  }
+
+  if (renderState === 'enable_prompt') {
+    return (
+      <Alert
+        className='mb-10px'
+        type='info'
+        content={
+          <div className='flex items-center justify-between gap-3'>
+            <span>{t('mcp.apps.enablePrompt')}</span>
+            <Button size='mini' type='primary' onClick={() => void setEnabled(true)}>
+              {t('common.confirm')}
+            </Button>
+          </div>
+        }
+      />
+    );
+  }
+
+  if (renderState === 'trust_prompt' && serverConfig) {
+    return (
+      <Alert
+        className='mb-10px'
+        type='info'
+        content={
+          <div className='flex items-center justify-between gap-3'>
+            <span>{t('mcp.apps.trustPrompt', { serverName: candidate.serverName })}</span>
+            <Button size='mini' type='primary' onClick={() => void addTrust(serverConfig.id)}>
+              {t('common.confirm')}
+            </Button>
+          </div>
+        }
+      />
+    );
+  }
+
+  if (renderState !== 'render' || !serverConfig || !uiMeta?.resourceUri) {
+    return null;
+  }
+
+  return (
+    <div className='mb-10px'>
+      <McpAppContainer
+        serverName={candidate.serverName}
+        resourceUri={uiMeta.resourceUri}
+        csp={uiMeta.csp}
+        transport={serverConfig.transport}
+        toolArguments={candidate.toolArguments}
+        toolResult={candidate.toolResult}
+      />
+    </div>
+  );
+};
+
 const MessageToolGroupSummary: React.FC<{ messages: Array<IMessageToolGroup | IMessageAcpToolCall> }> = ({
   messages,
 }) => {
@@ -217,6 +452,7 @@ const MessageToolGroupSummary: React.FC<{ messages: Array<IMessageToolGroup | IM
 
   return (
     <div>
+      <SummarizedMcpApp messages={messages} />
       <div className='flex items-center gap-10px color-#86909C cursor-pointer' onClick={() => setShowMore(!showMore)}>
         <Badge status='default' text='View Steps' className={'![&_span.arco-badge-status-text]:color-#86909C'}></Badge>
         {showMore ? <IconDown /> : <IconRight />}
