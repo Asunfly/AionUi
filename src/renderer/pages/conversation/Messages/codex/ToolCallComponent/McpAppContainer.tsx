@@ -17,9 +17,7 @@ type McpAppContainerProps = {
   resourceUri: string;
   csp?: McpToolUiMeta['csp'];
   transport: IMcpServer['transport'];
-  /** Tool arguments sent via sendToolInput on init */
   toolArguments?: Record<string, unknown>;
-  /** Tool result sent via sendToolResult when available */
   toolResult?: unknown;
 };
 
@@ -28,15 +26,23 @@ type CachedUiResource = {
   html: string;
   csp?: McpToolUiMeta['csp'];
 };
-type RememberedAppSize = {
-  height: number;
-  width: number | null;
+
+const HOST_INFO = { name: 'AionUi', version: '1.0.0' };
+const HOST_CAPABILITIES: McpUiHostCapabilities = {
+  openLinks: {},
+  serverTools: {},
+  logging: {},
 };
 
-const INITIAL_HEIGHT = 300;
-const SIZE_CACHE_STORAGE_KEY = 'mcp-app:size-cache:v2';
+const INITIAL_SHELL_HEIGHT = 300;
+const MIN_VIEWPORT_HEIGHT = 320;
+const MAX_VIEWPORT_HEIGHT = 960;
+const VIEWPORT_BOTTOM_MARGIN = 32;
+const MAX_IFRAME_CONTENT_HEIGHT = 1600;
+const INIT_TIMEOUT = 15_000;
+
 const uiResourceCache = new Map<string, Promise<CachedUiResource>>();
-const rememberedSizeCache = new Map<string, RememberedAppSize>();
+const blobUrlCache = new Map<string, string>();
 
 function stableSerialize(value: unknown): string {
   if (value === undefined) return 'undefined';
@@ -51,78 +57,30 @@ function stableSerialize(value: unknown): string {
   return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`).join(',')}}`;
 }
 
-function hashString(value: string): string {
-  let hash = 5381;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 33) ^ value.charCodeAt(index);
-  }
-  return (hash >>> 0).toString(36);
-}
-
-function getTransportSignature(transport: IMcpServer['transport']): string {
-  return stableSerialize(transport);
-}
-
 function getUiResourceCacheKey(serverName: string, resourceUri: string, transport: IMcpServer['transport']): string {
-  return `${serverName}::${resourceUri}::${getTransportSignature(transport)}`;
+  return `${serverName}::${resourceUri}::${stableSerialize(transport)}`;
 }
 
-function getSizeCacheKey(
-  serverName: string,
-  resourceUri: string,
-  toolArguments?: Record<string, unknown>,
-  toolResult?: unknown
-): string {
-  const argsHash = hashString(stableSerialize(toolArguments));
-  const resultHash = hashString(stableSerialize(toolResult));
-  return `${serverName}::${resourceUri}::${argsHash}::${resultHash}`;
+function getBlobCacheKey(resourceCacheKey: string, csp?: McpToolUiMeta['csp']): string {
+  return `${resourceCacheKey}::${stableSerialize(csp)}`;
 }
 
-function readPersistedSizeCache(): Record<string, RememberedAppSize> {
-  if (typeof window === 'undefined') return {};
+function injectCsp(html: string, csp?: McpToolUiMeta['csp']): string {
+  if (!csp) return html;
 
-  try {
-    const raw = window.localStorage.getItem(SIZE_CACHE_STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<string, RememberedAppSize>;
-  } catch {
-    return {};
+  const directives: string[] = ["default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:"];
+  if (csp.connectDomains?.length) {
+    directives.push(`connect-src 'self' ${csp.connectDomains.join(' ')}`);
   }
-}
-
-function getRememberedSize(cacheKey: string): RememberedAppSize | undefined {
-  const inMemory = rememberedSizeCache.get(cacheKey);
-  if (inMemory) return inMemory;
-
-  const persisted = readPersistedSizeCache()[cacheKey];
-  if (persisted) {
-    rememberedSizeCache.set(cacheKey, persisted);
-  }
-  return persisted;
-}
-
-function getInitialHeightFromRememberedSize(size: RememberedAppSize | undefined): number {
-  if (!size) return INITIAL_HEIGHT;
-
-  if (size.width !== null && size.width >= WIDE_LAYOUT_WIDTH_THRESHOLD) {
-    return Math.min(size.height, SMALL_VISUALIZATION_HEIGHT_THRESHOLD);
+  if (csp.resourceDomains?.length) {
+    directives.push(`script-src 'self' 'unsafe-inline' 'unsafe-eval' ${csp.resourceDomains.join(' ')}`);
+    directives.push(`style-src 'self' 'unsafe-inline' ${csp.resourceDomains.join(' ')}`);
+    directives.push(`img-src 'self' data: blob: ${csp.resourceDomains.join(' ')}`);
+    directives.push(`font-src 'self' data: ${csp.resourceDomains.join(' ')}`);
   }
 
-  return size.height;
-}
-
-function rememberSize(cacheKey: string, size: RememberedAppSize): void {
-  rememberedSizeCache.set(cacheKey, size);
-
-  if (typeof window === 'undefined') return;
-
-  try {
-    const persisted = readPersistedSizeCache();
-    persisted[cacheKey] = size;
-    window.localStorage.setItem(SIZE_CACHE_STORAGE_KEY, JSON.stringify(persisted));
-  } catch {
-    return;
-  }
+  const metaTag = `<meta http-equiv="Content-Security-Policy" content="${directives.join('; ')}">`;
+  return html.includes('<head>') ? html.replace('<head>', `<head>${metaTag}`) : `${metaTag}${html}`;
 }
 
 async function readUiResourceCached(
@@ -134,9 +92,7 @@ async function readUiResourceCached(
   }
 ): Promise<CachedUiResource> {
   const cached = uiResourceCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
+  if (cached) return cached;
 
   const request = ipcBridge.mcpService.readUiResource
     .invoke(params)
@@ -157,46 +113,11 @@ async function readUiResourceCached(
 
 export function __resetMcpAppContainerCachesForTest(): void {
   uiResourceCache.clear();
-  rememberedSizeCache.clear();
+  for (const blobUrl of blobUrlCache.values()) {
+    URL.revokeObjectURL(blobUrl);
+  }
+  blobUrlCache.clear();
 }
-
-/** Inject a Content-Security-Policy meta tag into the HTML <head> */
-function injectCsp(html: string, csp?: McpToolUiMeta['csp']): string {
-  if (!csp) return html;
-
-  const directives: string[] = ["default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:"];
-  if (csp.connectDomains?.length) {
-    directives.push(`connect-src 'self' ${csp.connectDomains.join(' ')}`);
-  }
-  if (csp.resourceDomains?.length) {
-    directives.push(`script-src 'self' 'unsafe-inline' 'unsafe-eval' ${csp.resourceDomains.join(' ')}`);
-    directives.push(`style-src 'self' 'unsafe-inline' ${csp.resourceDomains.join(' ')}`);
-    directives.push(`img-src 'self' data: blob: ${csp.resourceDomains.join(' ')}`);
-    directives.push(`font-src 'self' data: ${csp.resourceDomains.join(' ')}`);
-  }
-
-  const metaTag = `<meta http-equiv="Content-Security-Policy" content="${directives.join('; ')}">`;
-  // Insert after <head> or at the start of the document
-  if (html.includes('<head>')) {
-    return html.replace('<head>', `<head>${metaTag}`);
-  }
-  return `${metaTag}${html}`;
-}
-
-const HOST_INFO = { name: 'AionUi', version: '1.0.0' };
-const HOST_CAPABILITIES: McpUiHostCapabilities = {
-  openLinks: {},
-  serverTools: {},
-  logging: {},
-};
-const MAX_HEIGHT = 960;
-const MIN_HEIGHT = 320;
-const VIEWPORT_BOTTOM_MARGIN = 32;
-const MAX_IFRAME_CONTENT_HEIGHT = 1600;
-const WIDE_LAYOUT_WIDTH_THRESHOLD = 1000;
-const SMALL_VISUALIZATION_HEIGHT_THRESHOLD = 420;
-const VISUALIZATION_PREFERRED_HEIGHT_RATIO = 0.72;
-const INIT_TIMEOUT = 15_000;
 
 const McpAppContainer: React.FC<McpAppContainerProps> = ({
   serverName,
@@ -211,43 +132,38 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
     () => getUiResourceCacheKey(serverName, resourceUri, transport),
     [resourceUri, serverName, transport]
   );
-  const sizeCacheKey = useMemo(
-    () => getSizeCacheKey(serverName, resourceUri, toolArguments, toolResult),
-    [resourceUri, serverName, toolArguments, toolResult]
-  );
-  const rememberedSize = useMemo(() => getRememberedSize(sizeCacheKey), [sizeCacheKey]);
   const cspSignature = useMemo(() => stableSerialize(csp), [csp]);
+  const stableCsp = useMemo(() => csp, [cspSignature]);
+
   const shellRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const bridgeRef = useRef<AppBridge | null>(null);
   const blobUrlRef = useRef<string | null>(null);
-  const sentResultRef = useRef(false);
   const initTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initializedRef = useRef(false);
+  const sentResultRef = useRef(false);
+  const measuredSizeRef = useRef<{ width: number | null; height: number }>({
+    width: null,
+    height: INITIAL_SHELL_HEIGHT,
+  });
 
   const [state, setState] = useState<ContainerState>('loading');
   const [errorMsg, setErrorMsg] = useState('');
-  const [iframeHeight, setIframeHeight] = useState(getInitialHeightFromRememberedSize(rememberedSize));
-  const [iframeWidth, setIframeWidth] = useState<number | null>(rememberedSize?.width ?? null);
-  const [viewportMaxHeight, setViewportMaxHeight] = useState(MAX_HEIGHT);
+  const [hasMeasuredSize, setHasMeasuredSize] = useState(false);
+  const [iframeWidth, setIframeWidth] = useState<number | null>(null);
+  const [iframeHeight, setIframeHeight] = useState(INITIAL_SHELL_HEIGHT);
+  const [viewportMaxHeight, setViewportMaxHeight] = useState(MAX_VIEWPORT_HEIGHT);
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    const nextRememberedSize = getRememberedSize(sizeCacheKey);
-    setIframeHeight(getInitialHeightFromRememberedSize(nextRememberedSize));
-    setIframeWidth(nextRememberedSize?.width ?? null);
-  }, [sizeCacheKey]);
 
   const updateViewportMaxHeight = useCallback(() => {
     const top = shellRef.current?.getBoundingClientRect().top;
     if (typeof top !== 'number') {
-      setViewportMaxHeight(MAX_HEIGHT);
+      setViewportMaxHeight(MAX_VIEWPORT_HEIGHT);
       return;
     }
 
     const availableHeight = window.innerHeight - top - VIEWPORT_BOTTOM_MARGIN;
-    const nextHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.floor(availableHeight)));
-    setViewportMaxHeight(nextHeight);
+    setViewportMaxHeight(Math.min(MAX_VIEWPORT_HEIGHT, Math.max(MIN_VIEWPORT_HEIGHT, Math.floor(availableHeight))));
   }, []);
 
   const clearInitTimeout = useCallback(() => {
@@ -272,25 +188,28 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
       if (bridgeRef.current) return;
 
       initializedRef.current = false;
-
       const bridge = new AppBridge(null, HOST_INFO, HOST_CAPABILITIES);
 
       bridge.onsizechange = (params) => {
-        let nextWidth = iframeWidth;
-        let nextHeight = iframeHeight;
+        const previous = measuredSizeRef.current;
+        let nextWidth = previous.width;
+        let nextHeight = previous.height;
+
         if (params.width && params.width > 0) {
           nextWidth = Math.ceil(params.width);
-          setIframeWidth(nextWidth);
         }
         if (params.height && params.height > 0) {
           nextHeight = Math.ceil(params.height);
-          setIframeHeight(nextHeight);
         }
 
-        rememberSize(sizeCacheKey, {
-          width: nextWidth,
-          height: nextHeight,
-        });
+        if (previous.width !== null && nextWidth !== null && nextWidth > previous.width && nextHeight < previous.height) {
+          nextHeight = previous.height;
+        }
+
+        measuredSizeRef.current = { width: nextWidth, height: nextHeight };
+        setHasMeasuredSize(true);
+        setIframeWidth(nextWidth);
+        setIframeHeight(nextHeight);
       };
 
       bridge.onopenlink = async (params) => {
@@ -348,25 +267,27 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
         setErrorMsg(error instanceof Error ? error.message : String(error));
       });
     },
-    [clearInitTimeout, iframeHeight, iframeWidth, serverName, sizeCacheKey, toolArguments, toolResult, transport]
+    [clearInitTimeout, serverName, toolArguments, toolResult, transport]
   );
+
+  useEffect(() => {
+    measuredSizeRef.current = { width: null, height: INITIAL_SHELL_HEIGHT };
+    sentResultRef.current = false;
+    setHasMeasuredSize(false);
+    setIframeWidth(null);
+    setIframeHeight(INITIAL_SHELL_HEIGHT);
+  }, [serverName, resourceUri]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) return;
-
     connectBridge(iframe.contentWindow);
   }, [connectBridge]);
 
   useLayoutEffect(() => {
     updateViewportMaxHeight();
-
-    const handleResize = () => {
-      updateViewportMaxHeight();
-    };
-
+    const handleResize = () => updateViewportMaxHeight();
     window.addEventListener('resize', handleResize);
-
     return () => {
       window.removeEventListener('resize', handleResize);
     };
@@ -376,7 +297,6 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
     updateViewportMaxHeight();
   }, [iframeHeight, state, updateViewportMaxHeight]);
 
-  // Fetch UI resource HTML and create blob URL
   useEffect(() => {
     let cancelled = false;
 
@@ -390,9 +310,17 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
 
         if (cancelled) return;
 
-        const html = injectCsp(response.html, csp || response.csp);
-        const blob = new Blob([html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
+        const effectiveCsp = stableCsp || response.csp;
+        const blobCacheKey = getBlobCacheKey(resourceCacheKey, effectiveCsp);
+        let url = blobUrlCache.get(blobCacheKey) || null;
+
+        if (!url) {
+          const html = injectCsp(response.html, effectiveCsp);
+          const blob = new Blob([html], { type: 'text/html' });
+          url = URL.createObjectURL(blob);
+          blobUrlCache.set(blobCacheKey, url);
+        }
+
         blobUrlRef.current = url;
         setIframeSrc(url);
         setState('ready');
@@ -408,17 +336,14 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [clearInitTimeout, csp, cspSignature, resourceCacheKey, resourceUri, serverName, startInitTimeout, t, transport]);
+  }, [clearInitTimeout, resourceCacheKey, resourceUri, serverName, stableCsp, startInitTimeout, t, transport]);
 
-  // Initialize AppBridge after iframe loads
   const handleIframeLoad = useCallback(() => {
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) return;
-
     connectBridge(iframe.contentWindow);
   }, [connectBridge]);
 
-  // Send tool result when it arrives after initialization
   useEffect(() => {
     if (toolResult !== undefined && bridgeRef.current && state === 'connected' && !sentResultRef.current) {
       sentResultRef.current = true;
@@ -431,7 +356,6 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
     }
   }, [toolResult, state]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       clearInitTimeout();
@@ -450,16 +374,9 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
     return <Alert type='error' content={errorMsg || t('mcp.apps.error')} className='mt-2' />;
   }
 
-  const preferredVisualizationHeight = Math.min(
-    viewportMaxHeight,
-    Math.max(MIN_HEIGHT, Math.floor(viewportMaxHeight * VISUALIZATION_PREFERRED_HEIGHT_RATIO))
-  );
-  const isWideLayout = typeof iframeWidth === 'number' && iframeWidth >= WIDE_LAYOUT_WIDTH_THRESHOLD;
-  const shouldUseVisualizationHeightFallback =
-    iframeHeight <= SMALL_VISUALIZATION_HEIGHT_THRESHOLD && !isWideLayout;
-  const renderedHeight = shouldUseVisualizationHeightFallback
-    ? Math.max(iframeHeight, preferredVisualizationHeight)
-    : Math.min(Math.max(iframeHeight, MIN_HEIGHT), MAX_IFRAME_CONTENT_HEIGHT);
+  const renderedHeight = hasMeasuredSize
+    ? Math.min(Math.max(iframeHeight, 1), MAX_IFRAME_CONTENT_HEIGHT)
+    : Math.min(INITIAL_SHELL_HEIGHT, viewportMaxHeight);
 
   return (
     <div ref={shellRef} className='mt-2 w-full rounded border border-b-base overflow-hidden relative bg-1'>

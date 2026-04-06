@@ -7,6 +7,8 @@ const callMcpToolInvokeMock = vi.fn();
 const sendToolInputMock = vi.fn();
 const sendToolResultMock = vi.fn();
 const teardownResourceMock = vi.fn();
+const createObjectUrlMock = vi.fn();
+const revokeObjectUrlMock = vi.fn();
 
 let shouldAutoInitialize = true;
 let activeBridge:
@@ -121,8 +123,8 @@ describe('McpAppContainer init timeout', () => {
     vi.stubGlobal(
       'URL',
       Object.assign(URL, {
-        createObjectURL: vi.fn(() => 'blob:test-url'),
-        revokeObjectURL: vi.fn(),
+        createObjectURL: createObjectUrlMock.mockImplementation(() => 'blob:test-url'),
+        revokeObjectURL: revokeObjectUrlMock,
       })
     );
 
@@ -162,7 +164,7 @@ describe('McpAppContainer init timeout', () => {
     expect(readUiResourceInvokeMock).toHaveBeenCalledTimes(1);
   });
 
-  it('restores the last known size when the same app remounts', async () => {
+  it('remounts with a compact shell instead of restoring the previous measured size', async () => {
     const firstRender = render(
       <McpAppContainer
         serverName='drawio'
@@ -176,7 +178,7 @@ describe('McpAppContainer init timeout', () => {
     await flushPromises();
 
     act(() => {
-      simulateAppResize({ width: 800, height: 560 });
+      simulateAppResize({ width: 1200, height: 760 });
     });
 
     firstRender.unmount();
@@ -194,26 +196,21 @@ describe('McpAppContainer init timeout', () => {
 
     const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
 
-    expect(Number.parseInt(iframe.style.height, 10)).toBe(560);
-    expect(iframe.style.width).toBe('800px');
+    expect(Number.parseInt(iframe.style.height, 10)).toBe(300);
+    expect(iframe.style.width).toBe('100%');
   });
 
-  it('does not restore an oversized remembered height for wide layouts on remount', async () => {
+  it('reuses the same blob URL when the identical UI resource remounts', async () => {
     const firstRender = render(
       <McpAppContainer
         serverName='drawio'
         resourceUri='ui://drawio/mcp-app.html'
         transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
-        toolArguments={{ xml: '<mxGraphModel id="wide-remember" />' }}
       />
     );
 
     await flushPromises();
     await flushPromises();
-
-    act(() => {
-      simulateAppResize({ width: 1400, height: 760 });
-    });
 
     firstRender.unmount();
 
@@ -222,16 +219,14 @@ describe('McpAppContainer init timeout', () => {
         serverName='drawio'
         resourceUri='ui://drawio/mcp-app.html'
         transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
-        toolArguments={{ xml: '<mxGraphModel id="wide-remember" />' }}
       />
     );
 
     await flushPromises();
+    await flushPromises();
 
-    const iframe = screen.getByTitle('MCP App: drawio') as HTMLIFrameElement;
-
-    expect(Number.parseInt(iframe.style.height, 10)).toBeLessThan(760);
-    expect(iframe.style.width).toBe('1400px');
+    expect(createObjectUrlMock).toHaveBeenCalledTimes(1);
+    expect(readUiResourceInvokeMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not show timeout after the app initializes successfully', async () => {
@@ -353,7 +348,7 @@ describe('McpAppContainer init timeout', () => {
     expect(iframe.style.width).toBe('1400px');
   });
 
-  it('uses a modest fallback height for small reported visualizations', async () => {
+  it('uses the reported height for small visualizations', async () => {
     shouldAutoInitialize = false;
     vi.stubGlobal('innerHeight', 900);
     vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({
@@ -386,7 +381,7 @@ describe('McpAppContainer init timeout', () => {
       simulateAppResize({ width: 800, height: 400 });
     });
 
-    expect(Number.parseInt(iframe.style.height, 10)).toBeGreaterThan(400);
+    expect(Number.parseInt(iframe.style.height, 10)).toBe(400);
     expect(Number.parseInt(iframe.style.height, 10)).toBeLessThanOrEqual(Number.parseInt(scrollShell.style.maxHeight, 10));
     expect(scrollShell.style.overflowY).toBe('auto');
     expect(scrollShell.style.overflowX).toBe('auto');
