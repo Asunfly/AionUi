@@ -1,14 +1,9 @@
 import type { BadgeProps } from '@arco-design/web-react';
-import { Alert, Badge, Button } from '@arco-design/web-react';
+import { Badge } from '@arco-design/web-react';
 import { IconDown, IconRight } from '@arco-design/web-react/icon';
 import React, { useEffect, useMemo, useState } from 'react';
 import type { IMessageAcpToolCall, IMessageToolGroup } from '@/common/chat/chatLib';
-import { ConfigStorage } from '@/common/config/storage';
-import type { IMcpServer } from '@/common/config/storage';
-import { useMcpAppsConfig } from '@renderer/hooks/mcp/useMcpAppsConfig';
-import { getMcpAppRenderState } from '@renderer/pages/conversation/Messages/codex/ToolCallComponent/McpToolDisplay';
-import McpAppContainer from '@renderer/pages/conversation/Messages/codex/ToolCallComponent/McpAppContainer';
-import { useTranslation } from 'react-i18next';
+import { McpAppMessageSection } from '@renderer/pages/conversation/Messages/mcp';
 import './MessageToolGroupSummary.css';
 
 type ToolItem = {
@@ -128,6 +123,12 @@ const getGeminiMcpAppCandidate = (message: IMessageToolGroup): SummarizedMcpAppC
     const tool = message.content[index];
     if (tool.status !== 'Success' && tool.status !== 'Executing') continue;
 
+    const metadataIdentity = tool.mcp
+      ? {
+          serverName: tool.mcp.serverName,
+          toolName: tool.mcp.toolName,
+        }
+      : undefined;
     const confirmedIdentity =
       tool.confirmationDetails?.type === 'mcp'
         ? {
@@ -136,13 +137,13 @@ const getGeminiMcpAppCandidate = (message: IMessageToolGroup): SummarizedMcpAppC
           }
         : undefined;
     const parsedIdentity = parseMcpToolIdentity(tool.name);
-    const identity = confirmedIdentity || parsedIdentity;
+    const identity = metadataIdentity || confirmedIdentity || parsedIdentity;
 
     if (!identity) continue;
 
     return {
       ...identity,
-      toolArguments: parseToolArguments(tool.description),
+      toolArguments: tool.mcp?.arguments ?? parseToolArguments(tool.description),
       toolResult: tool.resultDisplay,
     };
   }
@@ -342,87 +343,21 @@ const ToolItemDetail: React.FC<{ item: ToolItem }> = ({ item }) => {
 };
 
 const SummarizedMcpApp: React.FC<{ messages: Array<IMessageToolGroup | IMessageAcpToolCall> }> = ({ messages }) => {
-  const { t } = useTranslation();
-  const { enabled, isServerTrusted, setEnabled, addTrust } = useMcpAppsConfig();
-  const [serverConfig, setServerConfig] = useState<IMcpServer | null>(null);
   const candidate = useMemo(() => getSummarizedMcpAppCandidate(messages), [messages]);
 
-  useEffect(() => {
-    if (!candidate?.serverName) {
-      setServerConfig(null);
-      return;
-    }
-
-    let cancelled = false;
-    void ConfigStorage.get('mcp.config').then((servers) => {
-      if (cancelled) return;
-      const found = servers?.find((server) => server.name === candidate.serverName) ?? null;
-      setServerConfig(found);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [candidate?.serverName]);
-
-  const uiMeta = serverConfig?.tools?.find((tool) => tool.name === candidate?.toolName)?._meta?.ui;
-  const renderState = getMcpAppRenderState({
-    hasUiMeta: Boolean(uiMeta?.resourceUri),
-    enabled,
-    hasServerConfig: Boolean(serverConfig),
-    trusted: serverConfig ? isServerTrusted(serverConfig.id) : false,
-  });
-
-  if (!candidate || renderState === 'raw') {
-    return null;
-  }
-
-  if (renderState === 'enable_prompt') {
-    return (
-      <Alert
-        className='mb-10px'
-        type='info'
-        content={
-          <div className='flex items-center justify-between gap-3'>
-            <span>{t('mcp.apps.enablePrompt')}</span>
-            <Button size='mini' type='primary' onClick={() => void setEnabled(true)}>
-              {t('common.confirm')}
-            </Button>
-          </div>
-        }
-      />
-    );
-  }
-
-  if (renderState === 'trust_prompt' && serverConfig) {
-    return (
-      <Alert
-        className='mb-10px'
-        type='info'
-        content={
-          <div className='flex items-center justify-between gap-3'>
-            <span>{t('mcp.apps.trustPrompt', { serverName: candidate.serverName })}</span>
-            <Button size='mini' type='primary' onClick={() => void addTrust(serverConfig.id)}>
-              {t('common.confirm')}
-            </Button>
-          </div>
-        }
-      />
-    );
-  }
-
-  if (renderState !== 'render' || !serverConfig || !uiMeta?.resourceUri) {
+  if (!candidate) {
     return null;
   }
 
   return (
     <div className='mb-10px'>
-      <McpAppContainer
-        serverName={candidate.serverName}
-        resourceUri={uiMeta.resourceUri}
-        csp={uiMeta.csp}
-        transport={serverConfig.transport}
-        toolArguments={candidate.toolArguments}
+      <McpAppMessageSection
+        mcp={{
+          serverName: candidate.serverName,
+          toolName: candidate.toolName,
+          toolDisplayName: candidate.toolName,
+          arguments: candidate.toolArguments,
+        }}
         toolResult={candidate.toolResult}
       />
     </div>

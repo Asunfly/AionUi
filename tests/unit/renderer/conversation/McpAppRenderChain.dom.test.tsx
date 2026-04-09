@@ -31,9 +31,10 @@ vi.mock('@/common/config/storage', () => ({
 }));
 
 vi.mock('@renderer/hooks/mcp/useMcpAppsConfig', () => ({
+  getMcpAppTrustKey: (server: { name: string }) => server.name,
   useMcpAppsConfig: () => ({
     enabled: true,
-    trustList: ['drawio-id'],
+    trustList: ['drawio'],
     loaded: true,
     setEnabled: vi.fn(),
     addTrust: vi.fn(),
