@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IMcpServer, IMcpTool, McpToolUiMeta } from '../../src/common/config/storage';
 import { resolveMcpToolUiMeta } from '../../src/process/agent/codex/handlers/CodexToolHandlers';
-import { getMcpAppRenderState } from '../../src/renderer/pages/conversation/Messages/codex/ToolCallComponent/McpToolDisplay';
+import { getMcpAppRenderState } from '../../src/renderer/pages/conversation/Messages/mcp';
 import { AbstractMcpAgent } from '../../src/process/services/mcpServices/McpProtocol';
 
 describe('McpToolUiMeta type and IMcpTool _meta.ui', () => {

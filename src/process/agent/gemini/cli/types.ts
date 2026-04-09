@@ -47,6 +47,12 @@ export interface IndividualToolCallDisplay {
   callId: string;
   name: string;
   description: string;
+  mcp?: {
+    serverName: string;
+    toolName: string;
+    toolDisplayName: string;
+    arguments?: Record<string, unknown>;
+  };
   resultDisplay: ToolResultDisplay | undefined;
   status: ToolCallStatus;
   confirmationDetails: ToolCallConfirmationDetails | SerializableConfirmationDetails | undefined;

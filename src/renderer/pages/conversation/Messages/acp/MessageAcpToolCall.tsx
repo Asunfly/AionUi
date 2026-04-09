@@ -5,17 +5,13 @@
  */
 
 import type { IMessageAcpToolCall } from '@/common/chat/chatLib';
-import { ConfigStorage } from '@/common/config/storage';
-import type { IMcpServer } from '@/common/config/storage';
 import FileChangesPanel from '@/renderer/components/base/FileChangesPanel';
 import { useDiffPreviewHandlers } from '@/renderer/hooks/file/useDiffPreviewHandlers';
 import { parseDiff } from '@/renderer/utils/file/diffUtils';
-import { useMcpAppsConfig } from '@renderer/hooks/mcp/useMcpAppsConfig';
-import { getMcpAppRenderState } from '@renderer/pages/conversation/Messages/codex/ToolCallComponent/McpToolDisplay';
-import McpAppContainer from '@renderer/pages/conversation/Messages/codex/ToolCallComponent/McpAppContainer';
-import { Alert, Button, Card, Collapse, Tag } from '@arco-design/web-react';
+import { McpAppMessageSection } from '@renderer/pages/conversation/Messages/mcp';
+import { Card, Tag } from '@arco-design/web-react';
 import { createTwoFilesPatch } from 'diff';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import MarkdownView from '@renderer/components/Markdown';
 
@@ -58,6 +54,19 @@ const StatusTag: React.FC<{ status: string }> = ({ status }) => {
 
   const { color, text } = getTagProps();
   return <Tag color={color}>{text}</Tag>;
+};
+
+const getKindDisplayName = (kind: string) => {
+  switch (kind) {
+    case 'edit':
+      return 'File Edit';
+    case 'read':
+      return 'File Read';
+    case 'execute':
+      return 'Shell Command';
+    default:
+      return kind;
+  }
 };
 
 // Diff content display as a separate component to ensure hooks are called unconditionally
@@ -112,97 +121,53 @@ const ContentView: React.FC<{ content: IMessageAcpToolCall['content']['update'][
 const AcpMcpAppSection: React.FC<{
   serverName: string;
   toolName: string;
+  toolDisplayName: string;
   rawInput?: Record<string, unknown>;
   toolResult?: string;
-}> = ({ serverName, toolName, rawInput, toolResult }) => {
+}> = ({ serverName, toolName, toolDisplayName, rawInput, toolResult }) => {
   const { t } = useTranslation();
-  const { enabled, isServerTrusted, setEnabled, addTrust } = useMcpAppsConfig();
-  const [serverConfig, setServerConfig] = useState<IMcpServer | null>(null);
-
-  useEffect(() => {
-    if (!serverName) return;
-    void ConfigStorage.get('mcp.config').then((servers) => {
-      const found = servers?.find((s) => s.name === serverName) ?? null;
-      setServerConfig(found);
-    });
-  }, [serverName]);
-
-  const uiMeta = serverConfig?.tools?.find((t) => t.name === toolName)?._meta?.ui;
-
-  const renderState = getMcpAppRenderState({
-    hasUiMeta: Boolean(uiMeta?.resourceUri),
-    enabled,
-    hasServerConfig: Boolean(serverConfig),
-    trusted: serverConfig ? isServerTrusted(serverConfig.id) : false,
-  });
-
-  if (renderState === 'raw') return null;
-
-  if (renderState === 'enable_prompt') {
-    return (
-      <Alert
-        className='mt-2'
-        type='info'
-        content={
-          <div className='flex items-center justify-between gap-3'>
-            <span>{t('mcp.apps.enablePrompt')}</span>
-            <Button size='mini' type='primary' onClick={() => void setEnabled(true)}>
-              {t('common.confirm')}
-            </Button>
+  const rawDetails =
+    rawInput || toolResult ? (
+      <div className='text-sm mb-2'>
+        {rawInput && (
+          <div className='mb-2'>
+            <div className='text-xs text-t-secondary mb-1'>{t('tools.labels.arguments')}</div>
+            <div className='bg-1 p-2 rounded text-sm border border-b-base'>
+              <pre className='text-xs whitespace-pre-wrap text-t-primary'>{JSON.stringify(rawInput, null, 2)}</pre>
+            </div>
           </div>
-        }
-      />
-    );
-  }
-
-  if (renderState === 'trust_prompt' && serverConfig) {
-    return (
-      <Alert
-        className='mt-2'
-        type='info'
-        content={
-          <div className='flex items-center justify-between gap-3'>
-            <span>{t('mcp.apps.trustPrompt', { serverName })}</span>
-            <Button size='mini' type='primary' onClick={() => void addTrust(serverConfig.id)}>
-              {t('common.confirm')}
-            </Button>
+        )}
+        {toolResult && (
+          <div>
+            <div className='text-xs text-t-secondary mb-1'>{t('tools.labels.result')}</div>
+            <div className='bg-1 p-2 rounded text-sm border border-b-base'>
+              <pre className='text-xs whitespace-pre-wrap text-t-primary'>{toolResult}</pre>
+            </div>
           </div>
-        }
-      />
-    );
-  }
+        )}
+      </div>
+    ) : undefined;
 
-  if (renderState === 'render' && serverConfig && uiMeta?.resourceUri) {
-    return (
-      <>
-        <McpAppContainer
-          serverName={serverName}
-          resourceUri={uiMeta.resourceUri}
-          csp={uiMeta.csp}
-          transport={serverConfig.transport}
-          toolArguments={rawInput}
-          toolResult={toolResult}
-        />
-        <Collapse bordered={false} className='mt-2'>
-          <Collapse.Item name='raw' header={t('mcp.apps.rawData')}>
-            {rawInput && (
-              <pre className='bg-1 p-2 rounded text-xs overflow-x-auto'>{JSON.stringify(rawInput, null, 2)}</pre>
-            )}
-          </Collapse.Item>
-        </Collapse>
-      </>
-    );
-  }
-
-  return null;
+  return (
+    <McpAppMessageSection
+      mcp={{
+        serverName,
+        toolName,
+        toolDisplayName,
+        arguments: rawInput,
+      }}
+      toolResult={toolResult}
+      rawContent={rawDetails}
+    />
+  );
 };
 
 const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ message }) => {
-  const { content } = message;
-  if (!content?.update) {
+  const { content: messageContent } = message;
+  if (!messageContent?.update) {
     return null;
   }
-  const { update } = content;
+  const { update } = messageContent;
   const { toolCallId, kind, title, status, rawInput, content: diffContent } = update;
 
   // Detect MCP tool calls by title format: "mcp__<server>__<tool>"
@@ -224,19 +189,6 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
     return texts.length > 0 ? texts.join('\n') : undefined;
   }, [diffContent]);
 
-  const getKindDisplayName = (kind: string) => {
-    switch (kind) {
-      case 'edit':
-        return 'File Edit';
-      case 'read':
-        return 'File Read';
-      case 'execute':
-        return 'Shell Command';
-      default:
-        return kind;
-    }
-  };
-
   return (
     <Card className='w-full mb-2' size='small' bordered>
       <div className='flex items-start gap-3'>
@@ -251,6 +203,7 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
             <AcpMcpAppSection
               serverName={mcpInfo.serverName}
               toolName={mcpInfo.toolName}
+              toolDisplayName={title || getKindDisplayName(kind)}
               rawInput={
                 rawInput?.arguments && typeof rawInput.arguments === 'object' && !Array.isArray(rawInput.arguments)
                   ? (rawInput.arguments as Record<string, unknown>)
@@ -272,8 +225,8 @@ const MessageAcpToolCall: React.FC<{ message: IMessageAcpToolCall }> = ({ messag
           )}
           {!mcpInfo && diffContent && diffContent.length > 0 && (
             <div>
-              {diffContent.map((content, index) => (
-                <ContentView key={index} content={content} />
+              {diffContent.map((item, index) => (
+                <ContentView key={index} content={item} />
               ))}
             </div>
           )}
