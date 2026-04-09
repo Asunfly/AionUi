@@ -175,6 +175,59 @@ function mapCoreStatusToDisplayStatus(coreStatus: CoreStatus): ToolCallStatus {
   }
 }
 
+function parseQualifiedMcpToolName(name: string): { serverName: string; toolName: string } | undefined {
+  const [serverName, ...toolNameParts] = name.split('__');
+  if (!serverName || toolNameParts.length === 0) {
+    return undefined;
+  }
+
+  const toolName = toolNameParts.join('__');
+  if (!toolName) {
+    return undefined;
+  }
+
+  return { serverName, toolName };
+}
+
+function getMcpToolDisplay(
+  trackedCall: TrackedToolCall,
+  displayName: string
+): IndividualToolCallDisplay['mcp'] | undefined {
+  const tool = trackedCall.tool as
+    | Partial<{
+        displayName: string;
+        serverName: string;
+        serverToolName: string;
+      }>
+    | undefined;
+  const invocation = ('invocation' in trackedCall ? trackedCall.invocation : undefined) as
+    | Partial<{
+        serverName: string;
+        serverToolName: string;
+      }>
+    | undefined;
+  const confirmationDetails =
+    trackedCall.status === 'awaiting_approval' && trackedCall.confirmationDetails?.type === 'mcp'
+      ? trackedCall.confirmationDetails
+      : undefined;
+  const requestInfo = parseQualifiedMcpToolName(trackedCall.request.name);
+  const serverName =
+    tool?.serverName ?? invocation?.serverName ?? confirmationDetails?.serverName ?? requestInfo?.serverName;
+  const toolName =
+    tool?.serverToolName ?? invocation?.serverToolName ?? confirmationDetails?.toolName ?? requestInfo?.toolName;
+
+  if (!serverName || !toolName) {
+    return undefined;
+  }
+
+  return {
+    serverName,
+    toolName,
+    toolDisplayName: confirmationDetails?.toolDisplayName ?? tool?.displayName ?? displayName,
+    arguments: trackedCall.request.args,
+  };
+}
+
 /**
  * Transforms `TrackedToolCall` objects into `HistoryItemToolGroup` objects for UI display.
  */
@@ -199,21 +252,29 @@ export function mapToDisplay(toolOrTools: TrackedToolCall[] | TrackedToolCall): 
       renderOutputAsMarkdown = trackedCall.tool.isOutputMarkdown;
     }
 
-    const baseDisplayProperties: Omit<IndividualToolCallDisplay, 'status' | 'resultDisplay' | 'confirmationDetails'> = {
+    const mcp = getMcpToolDisplay(trackedCall, displayName);
+    const buildDisplay = (
+      status: ToolCallStatus,
+      resultDisplay: IndividualToolCallDisplay['resultDisplay'],
+      confirmationDetails: IndividualToolCallDisplay['confirmationDetails']
+    ): IndividualToolCallDisplay => ({
       callId: trackedCall.request.callId,
       name: displayName,
       description,
+      mcp,
       renderOutputAsMarkdown,
-    };
+      status,
+      resultDisplay,
+      confirmationDetails,
+    });
 
     switch (trackedCall.status) {
       case 'success':
-        return {
-          ...baseDisplayProperties,
-          status: mapCoreStatusToDisplayStatus(trackedCall.status),
-          resultDisplay: trackedCall.response.resultDisplay,
-          confirmationDetails: undefined,
-        };
+        return buildDisplay(
+          mapCoreStatusToDisplayStatus(trackedCall.status),
+          trackedCall.response.resultDisplay,
+          undefined
+        );
       case 'error': {
         // Fallback: when resultDisplay is empty, construct from error info
         // 兜底：当 resultDisplay 为空时，从错误信息中构造显示内容
@@ -225,42 +286,25 @@ export function mapToDisplay(toolOrTools: TrackedToolCall[] | TrackedToolCall): 
             errorResultDisplay = [errType && `[${errType}]`, errMsg].filter(Boolean).join(' ');
           }
         }
-        return {
-          ...baseDisplayProperties,
-          status: mapCoreStatusToDisplayStatus(trackedCall.status),
-          resultDisplay: errorResultDisplay,
-          confirmationDetails: undefined,
-        };
+        return buildDisplay(mapCoreStatusToDisplayStatus(trackedCall.status), errorResultDisplay, undefined);
       }
       case 'cancelled':
-        return {
-          ...baseDisplayProperties,
-          status: mapCoreStatusToDisplayStatus(trackedCall.status),
-          resultDisplay: trackedCall.response.resultDisplay,
-          confirmationDetails: undefined,
-        };
+        return buildDisplay(
+          mapCoreStatusToDisplayStatus(trackedCall.status),
+          trackedCall.response.resultDisplay,
+          undefined
+        );
       case 'awaiting_approval':
-        return {
-          ...baseDisplayProperties,
-          status: mapCoreStatusToDisplayStatus(trackedCall.status),
-          resultDisplay: undefined,
-          confirmationDetails: trackedCall.confirmationDetails,
-        };
+        return buildDisplay(mapCoreStatusToDisplayStatus(trackedCall.status), undefined, trackedCall.confirmationDetails);
       case 'executing':
-        return {
-          ...baseDisplayProperties,
-          status: mapCoreStatusToDisplayStatus(trackedCall.status),
-          resultDisplay: (trackedCall as TrackedExecutingToolCall).liveOutput ?? undefined,
-          confirmationDetails: undefined,
-        };
+        return buildDisplay(
+          mapCoreStatusToDisplayStatus(trackedCall.status),
+          (trackedCall as TrackedExecutingToolCall).liveOutput ?? undefined,
+          undefined
+        );
       case 'validating': // Fallthrough
       case 'scheduled':
-        return {
-          ...baseDisplayProperties,
-          status: mapCoreStatusToDisplayStatus(trackedCall.status),
-          resultDisplay: undefined,
-          confirmationDetails: undefined,
-        };
+        return buildDisplay(mapCoreStatusToDisplayStatus(trackedCall.status), undefined, undefined);
       default: {
         return {
           callId: (trackedCall as TrackedToolCall).request.callId,

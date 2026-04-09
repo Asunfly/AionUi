@@ -6,24 +6,62 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ConfigStorage } from '@/common/config/storage';
+import type { IMcpServer } from '@/common/config/storage';
 
 /**
  * Hook for MCP Apps feature flag and trust list management.
  * Two-layer control:
  * - Feature flag: `mcp.apps.enabled` (user toggle, default false)
- * - Trust list: `mcp.apps.trustList` (server IDs allowed to render UI)
+ * - Trust list: `mcp.apps.trustList` (stable server keys allowed to render UI)
  */
+export const getMcpAppTrustKey = (server: Pick<IMcpServer, 'name'>): string => server.name;
+
+export const normalizeMcpAppsTrustList = (trustList: unknown, servers: Pick<IMcpServer, 'id' | 'name'>[]): string[] => {
+  if (!Array.isArray(trustList)) {
+    return [];
+  }
+
+  const trustKeysById = new Map(servers.map((server) => [server.id, getMcpAppTrustKey(server)]));
+  const knownTrustKeys = new Set(servers.map((server) => getMcpAppTrustKey(server)));
+  const normalized: string[] = [];
+
+  trustList.forEach((entry) => {
+    if (typeof entry !== 'string') {
+      return;
+    }
+
+    const normalizedEntry = knownTrustKeys.has(entry) ? entry : (trustKeysById.get(entry) ?? entry);
+    if (!normalized.includes(normalizedEntry)) {
+      normalized.push(normalizedEntry);
+    }
+  });
+
+  return normalized;
+};
+
 export const useMcpAppsConfig = () => {
   const [enabled, setEnabledState] = useState(false);
   const [trustList, setTrustListState] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    void Promise.all([ConfigStorage.get('mcp.apps.enabled'), ConfigStorage.get('mcp.apps.trustList')])
-      .then(([enabledVal, trustVal]) => {
+    void Promise.all([
+      ConfigStorage.get('mcp.apps.enabled'),
+      ConfigStorage.get('mcp.apps.trustList'),
+      ConfigStorage.get('mcp.config'),
+    ])
+      .then(([enabledVal, trustVal, servers]) => {
         setEnabledState(enabledVal === true);
-        if (Array.isArray(trustVal)) {
-          setTrustListState(trustVal);
+        const normalizedTrustList = normalizeMcpAppsTrustList(trustVal, Array.isArray(servers) ? servers : []);
+        setTrustListState(normalizedTrustList);
+
+        const shouldPersistMigratedTrustList =
+          Array.isArray(trustVal) &&
+          (trustVal.length !== normalizedTrustList.length ||
+            trustVal.some((entry, index) => entry !== normalizedTrustList[index]));
+
+        if (shouldPersistMigratedTrustList) {
+          void ConfigStorage.set('mcp.apps.trustList', normalizedTrustList);
         }
         setLoaded(true);
       })
@@ -38,24 +76,24 @@ export const useMcpAppsConfig = () => {
     await ConfigStorage.set('mcp.apps.enabled', value);
   }, []);
 
-  const addTrust = useCallback(async (serverId: string) => {
+  const addTrust = useCallback(async (trustKey: string) => {
     setTrustListState((prev) => {
-      if (prev.includes(serverId)) return prev;
-      const next = [...prev, serverId];
+      if (prev.includes(trustKey)) return prev;
+      const next = [...prev, trustKey];
       void ConfigStorage.set('mcp.apps.trustList', next);
       return next;
     });
   }, []);
 
-  const removeTrust = useCallback(async (serverId: string) => {
+  const removeTrust = useCallback(async (trustKey: string) => {
     setTrustListState((prev) => {
-      const next = prev.filter((id) => id !== serverId);
+      const next = prev.filter((entry) => entry !== trustKey);
       void ConfigStorage.set('mcp.apps.trustList', next);
       return next;
     });
   }, []);
 
-  const isServerTrusted = useCallback((serverId: string) => trustList.includes(serverId), [trustList]);
+  const isServerTrusted = useCallback((trustKey: string) => trustList.includes(trustKey), [trustList]);
 
   return useMemo(
     () => ({

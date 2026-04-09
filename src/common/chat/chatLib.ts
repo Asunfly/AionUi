@@ -166,6 +166,12 @@ export type IMessageToolGroup = IMessage<
   Array<{
     callId: string;
     description: string;
+    mcp?: {
+      serverName: string;
+      toolName: string;
+      toolDisplayName: string;
+      arguments?: Record<string, unknown>;
+    };
     name: string;
     renderOutputAsMarkdown: boolean;
     resultDisplay?:

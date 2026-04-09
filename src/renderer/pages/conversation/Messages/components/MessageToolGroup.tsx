@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next';
 import FileChangesPanel from '@/renderer/components/base/FileChangesPanel';
 import { useDiffPreviewHandlers } from '@/renderer/hooks/file/useDiffPreviewHandlers';
 import { parseDiff } from '@/renderer/utils/file/diffUtils';
+import { McpAppMessageSection } from '@renderer/pages/conversation/Messages/mcp';
 import MessageFileChanges from '../codex/MessageFileChanges';
 import CollapsibleContent from '@renderer/components/chat/CollapsibleContent';
 import LocalImageView from '@renderer/components/media/LocalImageView';
@@ -568,13 +569,21 @@ const MessageToolGroup: React.FC<IMessageToolGroupProps> = ({ message }) => {
                     {description}
                   </div>
                 )}
-                {resultDisplay && (
-                  <div>
-                    {/* 在 Alert 外展示完整结果 Display full result outside Alert */}
-                    {/* ToolResultDisplay 内部已包含 CollapsibleContent，避免嵌套 */}
-                    {/* ToolResultDisplay already contains CollapsibleContent internally, avoid nesting */}
-                    <ToolResultDisplay content={content} />
-                  </div>
+                {content.mcp ? (
+                  <McpAppMessageSection
+                    mcp={content.mcp}
+                    toolResult={resultDisplay}
+                    rawContent={resultDisplay ? <ToolResultDisplay content={content} /> : undefined}
+                  />
+                ) : (
+                  resultDisplay && (
+                    <div>
+                      {/* 在 Alert 外展示完整结果 Display full result outside Alert */}
+                      {/* ToolResultDisplay 内部已包含 CollapsibleContent，避免嵌套 */}
+                      {/* ToolResultDisplay already contains CollapsibleContent internally, avoid nesting */}
+                      <ToolResultDisplay content={content} />
+                    </div>
+                  )
                 )}
               </div>
             )}

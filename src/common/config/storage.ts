@@ -78,7 +78,7 @@ export interface IConfigStorageRefer {
   'mcp.agentInstallStatus': Record<string, string[]>;
   /** Enable MCP Apps interactive UI rendering in chat (default: false) */
   'mcp.apps.enabled'?: boolean;
-  /** Trusted MCP server IDs allowed to render interactive UI */
+  /** Trusted MCP server keys allowed to render interactive UI */
   'mcp.apps.trustList'?: string[];
   language: string;
   theme: string;
