@@ -73,6 +73,13 @@ export const conversation = {
     'conversation.response.search.workspace'
   ),
   reloadContext: bridge.buildProvider<IBridgeResponse, { conversation_id: string }>('conversation.reload-context'),
+  setConfig: bridge.buildProvider<
+    IBridgeResponse,
+    {
+      conversation_id: string;
+      config: { model?: string; thinking?: string; thinking_budget?: number; effort?: string };
+    }
+  >('conversation.set-config'),
   confirmation: {
     add: bridge.buildEmitter<IConfirmation<any> & { conversation_id: string }>('confirmation.add'),
     update: bridge.buildEmitter<IConfirmation<any> & { conversation_id: string }>('confirmation.update'),
@@ -219,6 +226,7 @@ export const fs = {
   readFile: bridge.buildProvider<string, { path: string }>('read-file'), // 读取文件内容（UTF-8）
   readFileBuffer: bridge.buildProvider<ArrayBuffer, { path: string }>('read-file-buffer'), // 读取二进制文件为 ArrayBuffer
   createTempFile: bridge.buildProvider<string, { fileName: string }>('create-temp-file'), // 创建临时文件
+  createUploadFile: bridge.buildProvider<string, { fileName: string; conversationId?: string }>('create-upload-file'), // 创建上传文件（根据设置决定保存位置）
   writeFile: bridge.buildProvider<boolean, { path: string; data: Uint8Array | string }>('write-file'), // 写入文件
   createZip: bridge.buildProvider<
     boolean,
@@ -328,11 +336,9 @@ export const fileWatch = {
   fileChanged: bridge.buildEmitter<{ filePath: string; eventType: string }>('file-changed'), // 文件变化事件
 };
 
-// 工作空间 Office 文件监听（检测新增的 .pptx/.docx/.xlsx）/ Workspace office file watcher (detects new .pptx/.docx/.xlsx)
+// 工作空间 Office 文件扫描（检测当前存在的 .pptx/.docx/.xlsx）/ Workspace office file scan
 export const workspaceOfficeWatch = {
-  start: bridge.buildProvider<IBridgeResponse, { workspace: string }>('workspace-office-watch-start'),
-  stop: bridge.buildProvider<IBridgeResponse, { workspace: string }>('workspace-office-watch-stop'),
-  fileAdded: bridge.buildEmitter<{ filePath: string; workspace: string }>('workspace-office-file-added'),
+  scan: bridge.buildProvider<string[], { workspace: string }>('workspace-office-watch-scan'),
 };
 
 // 文件流式更新（Agent 写入文件时实时推送内容）/ File streaming updates (real-time content push when agent writes)
@@ -481,11 +487,6 @@ export const acpConversation = {
   // 获取 ACP 代理的模型信息（模型名称和可用模型）
   getModelInfo: bridge.buildProvider<IBridgeResponse<{ modelInfo: AcpModelInfo | null }>, { conversationId: string }>(
     'acp.get-model-info'
-  ),
-  // Probe model info for an ACP backend without creating a visible conversation
-  // 预探测 ACP 后端的模型信息，不创建可见会话
-  probeModelInfo: bridge.buildProvider<IBridgeResponse<{ modelInfo: AcpModelInfo | null }>, { backend: AcpBackend }>(
-    'acp.probe-model-info'
   ),
   // Set model for ACP agents
   // 设置 ACP 代理的模型
@@ -719,6 +720,10 @@ export const systemSettings = {
   setSaveUploadToWorkspace: bridge.buildProvider<void, { enabled: boolean }>(
     'system-settings:set-save-upload-to-workspace'
   ),
+  getAutoPreviewOfficeFiles: bridge.buildProvider<boolean, void>('system-settings:get-auto-preview-office-files'),
+  setAutoPreviewOfficeFiles: bridge.buildProvider<void, { enabled: boolean }>(
+    'system-settings:set-auto-preview-office-files'
+  ),
   // Desktop pet settings
   getPetEnabled: bridge.buildProvider<boolean, void>('system-settings:get-pet-enabled'),
   setPetEnabled: bridge.buildProvider<void, { enabled: boolean }>('system-settings:set-pet-enabled'),
@@ -831,6 +836,7 @@ export type ICronSchedule =
 export interface ICronJob {
   id: string;
   name: string;
+  description?: string;
   enabled: boolean;
   schedule: ICronSchedule;
   target: {
@@ -1287,17 +1293,19 @@ export const team = {
   remove: bridge.buildProvider<void, { id: string }>('team.remove'),
   addAgent: bridge.buildProvider<import('@process/team/types').TeamAgent, IAddTeamAgentParams>('team.add-agent'),
   removeAgent: bridge.buildProvider<void, { teamId: string; slotId: string }>('team.remove-agent'),
-  sendMessage: bridge.buildProvider<void, { teamId: string; content: string }>('team.send-message'),
-  sendMessageToAgent: bridge.buildProvider<void, { teamId: string; slotId: string; content: string }>(
+  sendMessage: bridge.buildProvider<void, { teamId: string; content: string; files?: string[] }>('team.send-message'),
+  sendMessageToAgent: bridge.buildProvider<void, { teamId: string; slotId: string; content: string; files?: string[] }>(
     'team.send-message-to-agent'
   ),
   stop: bridge.buildProvider<void, { teamId: string }>('team.stop'),
   ensureSession: bridge.buildProvider<void, { teamId: string }>('team.ensure-session'),
   renameAgent: bridge.buildProvider<void, { teamId: string; slotId: string; newName: string }>('team.rename-agent'),
   renameTeam: bridge.buildProvider<void, { id: string; name: string }>('team.rename'),
-  messageStream: bridge.buildEmitter<import('@process/team/types').ITeamMessageEvent>('team.message.stream'),
+  setSessionMode: bridge.buildProvider<void, { teamId: string; sessionMode: string }>('team.set-session-mode'),
   agentStatusChanged: bridge.buildEmitter<import('@process/team/types').ITeamAgentStatusEvent>('team.agent.status'),
   agentSpawned: bridge.buildEmitter<import('@/common/types/teamTypes').ITeamAgentSpawnedEvent>('team.agent.spawned'),
   agentRemoved: bridge.buildEmitter<import('@/common/types/teamTypes').ITeamAgentRemovedEvent>('team.agent.removed'),
   agentRenamed: bridge.buildEmitter<import('@/common/types/teamTypes').ITeamAgentRenamedEvent>('team.agent.renamed'),
+  listChanged: bridge.buildEmitter<import('@/common/types/teamTypes').ITeamListChangedEvent>('team.list-changed'),
+  mcpStatus: bridge.buildEmitter<import('@/common/types/teamTypes').ITeamMcpStatusEvent>('team.mcp.status'),
 };

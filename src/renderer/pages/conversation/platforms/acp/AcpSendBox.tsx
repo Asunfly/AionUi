@@ -17,6 +17,7 @@ import { assertBridgeSuccess } from '@/renderer/pages/conversation/platforms/ass
 import { allSupportedExts } from '@/renderer/services/FileService';
 import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { mergeFileSelectionItems } from '@/renderer/utils/file/fileSelection';
+import { buildDisplayMessage } from '@/renderer/utils/file/messageFiles';
 import { Message, Tag } from '@arco-design/web-react';
 import { Shield } from '@icon-park/react';
 import { iconColors } from '@/renderer/styles/colors';
@@ -47,6 +48,15 @@ const useAcpSendBoxDraft = getSendBoxDraftHook('acp', {
 
 const EMPTY_AT_PATH: Array<string | FileOrFolderItem> = [];
 const EMPTY_UPLOAD_FILES: string[] = [];
+
+const assertTeamBridgeSuccess = (
+  result: void | { __bridgeError?: boolean; message?: string },
+  fallbackMessage: string
+): void => {
+  if (result && typeof result === 'object' && '__bridgeError' in result && result.__bridgeError) {
+    throw new Error(result.message || fallbackMessage);
+  }
+};
 
 const useSendBoxDraft = (conversation_id: string) => {
   const { data, mutate } = useAcpSendBoxDraft(conversation_id);
@@ -86,9 +96,19 @@ const AcpSendBox: React.FC<{
   sessionMode?: string;
   cachedConfigOptions?: import('@/common/types/acpTypes').AcpSessionConfigOption[];
   agentName?: string;
+  workspacePath?: string;
   teamId?: string;
   agentSlotId?: string;
-}> = ({ conversation_id, backend, sessionMode, cachedConfigOptions, agentName, teamId, agentSlotId }) => {
+}> = ({
+  conversation_id,
+  backend,
+  sessionMode,
+  cachedConfigOptions,
+  agentName,
+  workspacePath,
+  teamId,
+  agentSlotId,
+}) => {
   const {
     running,
     hasHydratedRunningState,
@@ -103,8 +123,9 @@ const AcpSendBox: React.FC<{
   const { t } = useTranslation();
   const teamPermission = useTeamPermission();
   const isCommandQueueEnabled = useCommandQueueEnabled();
-  // In team mode, only the lead agent shows the permission mode selector
-  const showModeSelector = !teamPermission || conversation_id === teamPermission.leadConversationId;
+  // In team mode, all agents show the permission mode selector (members don't propagate)
+  const showModeSelector = true;
+  const isLeadInTeam = teamPermission && conversation_id === teamPermission.leadConversationId;
   const { checkAndUpdateTitle } = useAutoTitle();
   const slashCommands = useSlashCommands(conversation_id, { agentStatus: acpStatus });
   const { atPath, uploadFile, setAtPath, setUploadFile, content, setContent } = useSendBoxDraft(conversation_id);
@@ -149,6 +170,7 @@ const AcpSendBox: React.FC<{
   useAcpInitialMessage({
     conversationId: conversation_id,
     backend,
+    workspacePath,
     setAiProcessing,
     checkAndUpdateTitle,
     addOrUpdateMessage: addOrUpdateMessageRef.current,
@@ -157,6 +179,7 @@ const AcpSendBox: React.FC<{
   const executeCommand = useCallback(
     async ({ input, files }: Pick<ConversationCommandQueueItem, 'input' | 'files'>) => {
       const msg_id = uuid();
+      const displayMessage = buildDisplayMessage(input, files, workspacePath || '');
 
       setAiProcessing(true);
 
@@ -167,22 +190,17 @@ const AcpSendBox: React.FC<{
             const result = await ipcBridge.team.sendMessageToAgent.invoke({
               teamId,
               slotId: agentSlotId,
-              content: input,
+              content: displayMessage,
+              files,
             });
-            const maybeError = result as unknown as { __bridgeError?: boolean; message?: string };
-            if (maybeError.__bridgeError) {
-              throw new Error(maybeError.message || 'Failed to send message to agent');
-            }
+            assertTeamBridgeSuccess(result, 'Failed to send message to agent');
           } else {
-            const result = await ipcBridge.team.sendMessage.invoke({ teamId, content: input });
-            const maybeError = result as unknown as { __bridgeError?: boolean; message?: string };
-            if (maybeError.__bridgeError) {
-              throw new Error(maybeError.message || 'Failed to send message to team');
-            }
+            const result = await ipcBridge.team.sendMessage.invoke({ teamId, content: displayMessage, files });
+            assertTeamBridgeSuccess(result, 'Failed to send message to team');
           }
         } else {
           const result = await ipcBridge.acpConversation.sendMessage.invoke({
-            input,
+            input: displayMessage,
             msg_id,
             conversation_id,
             files,
@@ -224,7 +242,7 @@ Please check your local CLI tool authentication status`,
         emitter.emit('acp.workspace.refresh');
       }
     },
-    [agentSlotId, backend, checkAndUpdateTitle, conversation_id, setAiProcessing, t, teamId]
+    [agentSlotId, backend, checkAndUpdateTitle, conversation_id, setAiProcessing, t, teamId, workspacePath]
   );
 
   const {
@@ -250,7 +268,7 @@ Please check your local CLI tool authentication status`,
   });
 
   const onSendHandler = async (message: string) => {
-    if (!isCommandQueueEnabled && isBusy) {
+    if (!teamId && !isCommandQueueEnabled && isBusy) {
       Message.warning(t('messages.conversationInProgress'));
       return;
     }
@@ -367,7 +385,7 @@ Please check your local CLI tool authentication status`,
                 modeLabelFormatter={(mode) => t(`agentMode.${mode.value}`, { defaultValue: mode.label })}
                 compactLabelPrefix={t('agentMode.permission')}
                 hideCompactLabelPrefixOnMobile
-                onModeChanged={teamPermission?.propagateMode}
+                onModeChanged={isLeadInTeam ? teamPermission?.propagateMode : undefined}
               />
             )}
             <AcpConfigSelector

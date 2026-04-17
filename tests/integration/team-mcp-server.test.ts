@@ -9,9 +9,44 @@
  * under test. All MCP tool behavior is exercised exclusively through TCP.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as net from 'node:net';
-import { TeamMcpServer } from '../../src/process/team/TeamMcpServer';
+
+// Mock ProcessConfig for dynamic team capability checks
+vi.mock('@process/utils/initStorage', () => ({
+  ProcessConfig: {
+    get: vi.fn(async (key: string) => {
+      if (key === 'acp.cachedInitializeResult') {
+        const makeEntry = () => ({
+          protocolVersion: 1,
+          capabilities: {
+            loadSession: false,
+            promptCapabilities: { image: false, audio: false, embeddedContext: false },
+            mcpCapabilities: { stdio: true, http: false, sse: false },
+            sessionCapabilities: { fork: null, resume: null, list: null, close: null },
+            _meta: {},
+          },
+          agentInfo: null,
+          authMethods: [],
+        });
+        return { claude: makeEntry(), codex: makeEntry() };
+      }
+      return null;
+    }),
+  },
+}));
+
+// Mock acpDetector for getTeamCapableBackends error message
+vi.mock('@process/agent/acp/AcpDetector', () => ({
+  acpDetector: {
+    getDetectedAgents: vi.fn(() => [
+      { backend: 'claude', name: 'Claude' },
+      { backend: 'codex', name: 'Codex' },
+    ]),
+  },
+}));
+
+import { TeamMcpServer } from '../../src/process/team/mcp/team/TeamMcpServer';
 import type { TeamAgent } from '@/common/types/teamTypes';
 import type { Mailbox } from '../../src/process/team/Mailbox';
 import type { TaskManager } from '../../src/process/team/TaskManager';
@@ -84,7 +119,7 @@ function makeAgent(overrides: Partial<TeamAgent> = {}): TeamAgent {
     conversationId: 'conv-lead',
     role: 'lead',
     agentType: 'claude',
-    agentName: 'Lead',
+    agentName: 'Leader',
     conversationType: 'acp',
     status: 'idle',
     ...overrides,
@@ -101,8 +136,6 @@ type MockTaskManager = {
   list: ReturnType<typeof vi.fn>;
   checkUnblocks: ReturnType<typeof vi.fn>;
 };
-
-import { vi } from 'vitest';
 
 function makeMockMailbox(): MockMailbox {
   return {
@@ -131,7 +164,7 @@ describe('TeamMcpServer — TCP tool interface', () => {
 
   beforeEach(async () => {
     agents = [
-      makeAgent({ slotId: 'slot-lead', agentName: 'Lead', role: 'lead' }),
+      makeAgent({ slotId: 'slot-lead', agentName: 'Leader', role: 'lead' }),
       makeAgent({ slotId: 'slot-worker', agentName: 'Worker', role: 'teammate', status: 'idle' }),
     ];
     mailbox = makeMockMailbox();
@@ -181,7 +214,7 @@ describe('TeamMcpServer — TCP tool interface', () => {
     it('returns formatted team member list', async () => {
       const resp = (await callTool(port, authToken, 'team_members')) as { result: string };
       expect(resp.result).toContain('## Team Members');
-      expect(resp.result).toContain('Lead');
+      expect(resp.result).toContain('Leader');
       expect(resp.result).toContain('lead');
       expect(resp.result).toContain('Worker');
       expect(resp.result).toContain('teammate');
@@ -276,7 +309,7 @@ describe('TeamMcpServer — TCP tool interface', () => {
         message: 'hello',
       })) as { error: string };
 
-      expect(resp.error).toContain('Lead');
+      expect(resp.error).toContain('Leader');
       expect(resp.error).toContain('Worker');
     });
 
@@ -296,7 +329,7 @@ describe('TeamMcpServer — TCP tool interface', () => {
       const serverWithRemove = new TeamMcpServer({
         teamId: 'team-remove',
         getAgents: () => [
-          makeAgent({ slotId: 'slot-lead', agentName: 'Lead', role: 'lead' }),
+          makeAgent({ slotId: 'slot-lead', agentName: 'Leader', role: 'lead' }),
           makeAgent({ slotId: 'slot-worker', agentName: 'Worker', role: 'teammate' }),
         ],
         mailbox: mailbox as unknown as Mailbox,
@@ -331,7 +364,7 @@ describe('TeamMcpServer — TCP tool interface', () => {
     it('intercepts shutdown_rejected and forwards reason to lead without removing agent', async () => {
       const removeAgent = vi.fn();
       const localAgents = [
-        makeAgent({ slotId: 'slot-lead', agentName: 'Lead', role: 'lead' }),
+        makeAgent({ slotId: 'slot-lead', agentName: 'Leader', role: 'lead' }),
         makeAgent({ slotId: 'slot-worker', agentName: 'Worker', role: 'teammate' }),
       ];
       const localMailbox = makeMockMailbox();
@@ -624,7 +657,7 @@ describe('TeamMcpServer — TCP tool interface', () => {
       const serverRename = new TeamMcpServer({
         teamId: 'team-rename',
         getAgents: () => [
-          makeAgent({ slotId: 'slot-lead', agentName: 'Lead', role: 'lead' }),
+          makeAgent({ slotId: 'slot-lead', agentName: 'Leader', role: 'lead' }),
           makeAgent({ slotId: 'slot-bob', agentName: 'Bob', role: 'teammate' }),
         ],
         mailbox: mailbox as unknown as Mailbox,
@@ -741,7 +774,7 @@ describe('TeamMcpServer — TCP tool interface', () => {
 
     it('returns error when trying to shut down the team lead', async () => {
       const resp = (await callTool(port, authToken, 'team_shutdown_agent', {
-        agent: 'Lead',
+        agent: 'Leader',
       })) as { error: string };
 
       expect(resp.error).toContain('Cannot shut down the team lead');

@@ -6,7 +6,54 @@ vi.mock('electron', () => ({
   app: { isPackaged: false, getAppPath: () => '/app' },
 }));
 
-import { TeamMcpServer } from '@process/team/TeamMcpServer';
+// Mock ProcessConfig for dynamic team capability checks
+vi.mock('@process/utils/initStorage', () => ({
+  ProcessConfig: {
+    get: vi.fn(async (key: string) => {
+      if (key === 'acp.cachedInitializeResult') {
+        return {
+          claude: {
+            protocolVersion: 1,
+            capabilities: {
+              loadSession: false,
+              promptCapabilities: { image: false, audio: false, embeddedContext: false },
+              mcpCapabilities: { stdio: true, http: false, sse: false },
+              sessionCapabilities: { fork: null, resume: null, list: null, close: null },
+              _meta: {},
+            },
+            agentInfo: null,
+            authMethods: [],
+          },
+          codex: {
+            protocolVersion: 1,
+            capabilities: {
+              loadSession: false,
+              promptCapabilities: { image: false, audio: false, embeddedContext: false },
+              mcpCapabilities: { stdio: true, http: false, sse: false },
+              sessionCapabilities: { fork: null, resume: null, list: null, close: null },
+              _meta: {},
+            },
+            agentInfo: null,
+            authMethods: [],
+          },
+        };
+      }
+      return null;
+    }),
+  },
+}));
+
+// Mock acpDetector for getTeamCapableBackends error message
+vi.mock('@process/agent/acp/AcpDetector', () => ({
+  acpDetector: {
+    getDetectedAgents: vi.fn(() => [
+      { backend: 'claude', name: 'Claude' },
+      { backend: 'codex', name: 'Codex' },
+    ]),
+  },
+}));
+
+import { TeamMcpServer } from '@process/team/mcp/team/TeamMcpServer';
 import type { Mailbox } from '@process/team/Mailbox';
 import type { TaskManager } from '@process/team/TaskManager';
 import type { TeamAgent } from '@process/team/types';
@@ -100,7 +147,7 @@ describe('TeamMcpServer', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     agents = [
-      makeAgent({ slotId: 'slot-lead', agentName: 'Lead', role: 'lead' }),
+      makeAgent({ slotId: 'slot-lead', agentName: 'Leader', role: 'lead' }),
       makeAgent({ slotId: 'slot-member', agentName: 'Alice', role: 'teammate' }),
     ];
     mailbox = makeMailbox();
@@ -201,7 +248,7 @@ describe('TeamMcpServer', () => {
         args: {},
         auth_token: authToken,
       })) as Record<string, unknown>;
-      expect(response.result).toContain('Lead');
+      expect(response.result).toContain('Leader');
       expect(response.result).toContain('Alice');
       expect(response.result).toContain('lead');
       expect(response.result).toContain('teammate');
@@ -383,7 +430,7 @@ describe('TeamMcpServer', () => {
     it('handles shutdown_approved by removing the sender agent', async () => {
       const response = (await tcpRequest(server.getPort(), {
         tool: 'team_send_message',
-        args: { to: 'Lead', message: 'shutdown_approved' },
+        args: { to: 'Leader', message: 'shutdown_approved' },
         from_slot_id: 'slot-member',
         auth_token: authToken,
       })) as Record<string, unknown>;
@@ -395,7 +442,7 @@ describe('TeamMcpServer', () => {
     it('handles shutdown_rejected by notifying lead', async () => {
       const response = (await tcpRequest(server.getPort(), {
         tool: 'team_send_message',
-        args: { to: 'Lead', message: 'shutdown_rejected: I need to finish my task' },
+        args: { to: 'Leader', message: 'shutdown_rejected: I need to finish my task' },
         from_slot_id: 'slot-member',
         auth_token: authToken,
       })) as Record<string, unknown>;
@@ -423,7 +470,7 @@ describe('TeamMcpServer', () => {
         auth_token: authToken,
       })) as Record<string, unknown>;
 
-      expect(spawnAgent).toHaveBeenCalledWith('NewBot', 'claude');
+      expect(spawnAgent).toHaveBeenCalledWith('NewBot', 'claude', undefined);
       expect(response.result).toContain('NewBot');
     });
 
@@ -442,7 +489,7 @@ describe('TeamMcpServer', () => {
     it('rejects unsupported agent types', async () => {
       const response = (await tcpRequest(server.getPort(), {
         tool: 'team_spawn_agent',
-        args: { name: 'GeminiBot', agent_type: 'gemini' },
+        args: { name: 'UnknownBot', agent_type: 'codebuddy' },
         from_slot_id: 'slot-lead',
         auth_token: authToken,
       })) as Record<string, unknown>;
@@ -477,7 +524,7 @@ describe('TeamMcpServer', () => {
     it('rejects shutdown of the lead', async () => {
       const response = (await tcpRequest(server.getPort(), {
         tool: 'team_shutdown_agent',
-        args: { agent: 'Lead' },
+        args: { agent: 'Leader' },
         from_slot_id: 'slot-lead',
         auth_token: authToken,
       })) as Record<string, unknown>;
@@ -597,7 +644,7 @@ describe('TeamMcpServer', () => {
         setTimeout(() => reject(new Error('Timeout')), 3000);
       });
 
-      expect((response as Record<string, unknown>).result).toContain('Lead');
+      expect((response as Record<string, unknown>).result).toContain('Leader');
     });
   });
 });

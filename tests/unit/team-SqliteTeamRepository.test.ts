@@ -1,6 +1,6 @@
 // tests/unit/team-SqliteTeamRepository.test.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initSchema } from '@process/services/database/schema';
+import { CURRENT_DB_VERSION, initSchema } from '@process/services/database/schema';
 import { runMigrations } from '@process/services/database/migrations';
 import { BetterSqlite3Driver } from '@process/services/database/drivers/BetterSqlite3Driver';
 import { SqliteTeamRepository } from '@process/team/repository/SqliteTeamRepository';
@@ -50,7 +50,7 @@ describeOrSkip('SqliteTeamRepository', () => {
   beforeEach(() => {
     driver = new BetterSqlite3Driver(':memory:');
     initSchema(driver);
-    runMigrations(driver, 0, 20);
+    runMigrations(driver, 0, CURRENT_DB_VERSION);
     // Insert a test user to satisfy the FOREIGN KEY constraint on teams.user_id
     driver
       .prepare(
@@ -139,6 +139,32 @@ describeOrSkip('SqliteTeamRepository', () => {
     it('returns empty array when no unread messages exist', async () => {
       const result = await repo.readUnreadAndMark('team-1', 'agent-a');
       expect(result).toHaveLength(0);
+    });
+
+    it('round-trips files through JSON serialization', async () => {
+      const files = ['/tmp/workspace/image.png', '/tmp/workspace/doc.pdf'];
+      await repo.writeMessage({ ...msg('m-files'), files });
+
+      const result = await repo.readUnreadAndMark('team-1', 'agent-a');
+      expect(result).toHaveLength(1);
+      expect(result[0].files).toEqual(files);
+    });
+
+    it('returns undefined files when message has no files', async () => {
+      await repo.writeMessage(msg('m-no-files'));
+
+      const result = await repo.readUnreadAndMark('team-1', 'agent-a');
+      expect(result).toHaveLength(1);
+      expect(result[0].files).toBeUndefined();
+    });
+
+    it('handles empty files array', async () => {
+      await repo.writeMessage({ ...msg('m-empty-files'), files: [] });
+
+      const result = await repo.readUnreadAndMark('team-1', 'agent-a');
+      expect(result).toHaveLength(1);
+      // Empty array serializes to '[]', deserializes back to []
+      expect(result[0].files).toEqual([]);
     });
   });
 

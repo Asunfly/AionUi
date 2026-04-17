@@ -9,7 +9,7 @@ import { useAssistantBackends } from '@/renderer/hooks/assistant';
 import { useInputFocusRing } from '@/renderer/hooks/chat/useInputFocusRing';
 import { openExternalUrl, resolveExtensionAssetUrl } from '@/renderer/utils/platform';
 import { useConversationTabs } from '@/renderer/pages/conversation/hooks/ConversationTabsContext';
-import { CUSTOM_AVATAR_IMAGE_MAP } from './constants';
+import { BUILTIN_AGENT_OPTIONS, CUSTOM_AVATAR_IMAGE_MAP } from './constants';
 import AgentPillBar from './components/AgentPillBar';
 import AssistantSelectionArea from './components/AssistantSelectionArea';
 import { AgentPillBarSkeleton } from './components/GuidSkeleton';
@@ -19,6 +19,7 @@ import GuidModelSelector from './components/GuidModelSelector';
 import MentionDropdown, { MentionSelectorBadge } from './components/MentionDropdown';
 import QuickActionButtons from './components/QuickActionButtons';
 import SkillsMarketBanner from './components/SkillsMarketBanner';
+import FeedbackReportModal from '@/renderer/components/settings/SettingsModal/contents/FeedbackReportModal';
 import { useGuidAgentSelection } from './hooks/useGuidAgentSelection';
 import { useGuidInput } from './hooks/useGuidInput';
 import { useGuidMention } from './hooks/useGuidMention';
@@ -36,16 +37,6 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import styles from './index.module.css';
 
-// Agent switcher options — same list as AssistantEditDrawer
-const BUILTIN_AGENT_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gemini', label: 'Gemini CLI' },
-  { value: 'claude', label: 'Claude Code' },
-  { value: 'qwen', label: 'Qwen Code' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'codebuddy', label: 'CodeBuddy' },
-  { value: 'opencode', label: 'OpenCode' },
-];
-
 const GuidPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -57,6 +48,7 @@ const GuidPage: React.FC = () => {
   const { activeBorderColor, inactiveBorderColor, activeShadow } = useInputFocusRing();
   const { availableBackends, extensionAcpAdapters } = useAssistantBackends();
   const localeKey = resolveLocaleKey(i18n.language);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   // Open external link
   const openLink = useCallback(async (url: string) => {
@@ -68,13 +60,26 @@ const GuidPage: React.FC = () => {
   }, []);
 
   // --- Hooks ---
-  const modelSelection = useGuidModelSelection();
+  // Track which provider-based agent is selected so model selection persists per agent type
+  const [providerAgentKey, setProviderAgentKey] = useState<'gemini' | 'aionrs'>('aionrs');
+  const modelSelection = useGuidModelSelection(providerAgentKey);
 
+  const resetAssistantRequested = (location.state as { resetAssistant?: boolean } | null)?.resetAssistant === true;
   const agentSelection = useGuidAgentSelection({
     modelList: modelSelection.modelList,
     isGoogleAuth: modelSelection.isGoogleAuth,
     localeKey,
+    resetAssistant: resetAssistantRequested,
+    locationKey: location.key,
   });
+
+  // Sync providerAgentKey when selected agent changes
+  useEffect(() => {
+    const agent = agentSelection.selectedAgent;
+    if (agent === 'gemini' || agent === 'aionrs') {
+      setProviderAgentKey(agent);
+    }
+  }, [agentSelection.selectedAgent]);
 
   const guidInput = useGuidInput({
     locationState: location.state as { workspace?: string } | null,
@@ -314,6 +319,14 @@ const GuidPage: React.FC = () => {
     setIsDescriptionExpanded(false);
   }, [location.key]);
 
+  // When sidebar "新对话" navigates with resetAssistant, clear the location state
+  // so subsequent re-renders don't keep seeing the flag. The actual agent reset
+  // is handled inside useGuidAgentSelection (via the resetAssistant option).
+  useEffect(() => {
+    if (!resetAssistantRequested) return;
+    window.history.replaceState(null, '', `${location.pathname}${location.search}${location.hash}`);
+  }, [resetAssistantRequested, location.pathname, location.search, location.hash]);
+
   useEffect(() => {
     const node = descriptionTextRef.current;
     if (!node || !agentSelection.isPresetAgent || !selectedAssistantDescription) {
@@ -407,14 +420,16 @@ const GuidPage: React.FC = () => {
     [agentSelection, currentPresetAgentType, t]
   );
 
-  // Determine if model selector should use provider-based mode (Gemini & Aion CLI)
-  // Both gemini and aionrs use configured model providers, not ACP probe-based models
+  // Resolve the effective agent type once — covers both direct selection and preset assistants
+  const effectiveAgentType = agentSelection.isPresetAgent
+    ? agentSelection.currentEffectiveAgentInfo.agentType
+    : agentSelection.selectedAgent;
+
+  // Agents that use configured model providers instead of ACP probe-based models
   const PROVIDER_BASED_AGENTS = new Set(['gemini', 'aionrs']);
   const isGeminiMode =
-    (PROVIDER_BASED_AGENTS.has(agentSelection.selectedAgent) && !agentSelection.isPresetAgent) ||
-    (agentSelection.isPresetAgent &&
-      agentSelection.currentEffectiveAgentInfo.agentType === 'gemini' &&
-      agentSelection.currentEffectiveAgentInfo.isAvailable);
+    PROVIDER_BASED_AGENTS.has(effectiveAgentType) &&
+    (!agentSelection.isPresetAgent || agentSelection.currentEffectiveAgentInfo.isAvailable);
 
   // Build the mention dropdown node
   const mentionDropdownNode = (
@@ -426,8 +441,8 @@ const GuidPage: React.FC = () => {
     />
   );
 
-  // AionCLI does not support Google Auth — filter it out when aionrs is selected
-  const isAionrs = agentSelection.selectedAgent === 'aionrs';
+  // AionCLI does not support Google Auth — filter it out
+  const isAionrs = effectiveAgentType === 'aionrs';
   const filteredModelList = useMemo(
     () =>
       isAionrs
@@ -698,9 +713,11 @@ const GuidPage: React.FC = () => {
 
         <QuickActionButtons
           onOpenLink={openLink}
+          onOpenBugReport={() => setShowFeedbackModal(true)}
           inactiveBorderColor={inactiveBorderColor}
           activeShadow={activeShadow}
         />
+        <FeedbackReportModal visible={showFeedbackModal} onCancel={() => setShowFeedbackModal(false)} />
       </div>
     </ConfigProvider>
   );

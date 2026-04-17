@@ -3,6 +3,8 @@ import { Robot } from '@icon-park/react';
 import { getAgentLogo } from '@renderer/utils/model/agentLogo';
 import { CUSTOM_AVATAR_IMAGE_MAP } from '@renderer/pages/guid/constants';
 import type { AvailableAgent } from '@renderer/utils/model/agentTypes';
+import type { AcpInitializeResult } from '@/common/types/acpTypes';
+import { isTeamCapableBackend } from '@/common/types/teamTypes';
 
 export function agentKey(agent: AvailableAgent): string {
   return agent.customAgentId ? `preset::${agent.customAgentId}` : `cli::${agent.backend}`;
@@ -16,26 +18,14 @@ export function resolveTeamAgentType(agent: AvailableAgent | undefined, fallback
   return agent?.presetAgentType || agent?.backend || fallback;
 }
 
-/**
- * Backends verified to support MCP tool injection in team mode.
- * Only these backends are allowed in team creation and agent spawning.
- * Other ACP backends may share the same code path but have not been
- * verified to correctly handle mcpServers in session/new.
- */
-export const TEAM_SUPPORTED_BACKENDS = new Set(['claude', 'codex']);
-
-/**
- * Check if an agent backend is supported in team mode.
- */
-export function isTeamSupportedBackend(backend: string): boolean {
-  return TEAM_SUPPORTED_BACKENDS.has(backend);
-}
-
 /** Filter agents to only those supported in team mode */
-export function filterTeamSupportedAgents(agents: AvailableAgent[]): AvailableAgent[] {
+export function filterTeamSupportedAgents(
+  agents: AvailableAgent[],
+  cachedInitResults: Record<string, AcpInitializeResult> | null | undefined
+): AvailableAgent[] {
   return agents.filter((a) => {
     const backend = a.presetAgentType || a.backend;
-    return isTeamSupportedBackend(backend);
+    return isTeamCapableBackend(backend, cachedInitResults);
   });
 }
 

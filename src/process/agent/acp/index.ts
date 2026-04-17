@@ -9,16 +9,19 @@ import type { IMcpServer } from '@/common/config/storage';
 import { extractAtPaths, parseAllAtCommands, reconstructQuery } from '@/common/chat/atCommandParser';
 import type { TMessage } from '@/common/chat/chatLib';
 import type { IResponseMessage } from '@/common/adapter/ipcBridge';
+import { ipcBridge } from '@/common';
 import { NavigationInterceptor } from '@/common/chat/navigation';
 import type { SlashCommandItem } from '@/common/chat/slash/types';
 import { uuid } from '@/common/utils';
 import type {
   AcpBackend,
+  AcpInitializeResult,
   AcpModelInfo,
   AcpPermissionRequest,
   AcpPromptResponseUsage,
   AcpResult,
   AcpSessionConfigOption,
+  AcpSessionModes,
   AcpSessionUpdate,
   AvailableCommandsUpdate,
   ToolCallUpdate,
@@ -28,7 +31,8 @@ import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { ProcessConfig } from '@process/utils/initStorage';
-import { getEnhancedEnv, resolveNpxPath } from '@process/utils/shellEnv';
+import { getEnhancedEnv, normalizeNpxArgsForBundledBun, resolveNpxPath } from '@process/utils/shellEnv';
+import { readClaudeModelInfoFromCcSwitch } from '@process/services/ccSwitchModelSource';
 import { AcpConnection } from './AcpConnection';
 import { AcpApprovalStore, createAcpApprovalKey } from './ApprovalStore';
 import {
@@ -37,29 +41,14 @@ import {
   IFLOW_YOLO_SESSION_MODE,
   QWEN_YOLO_SESSION_MODE,
 } from './constants';
-import { buildAcpModelInfo, summarizeAcpModelInfo } from './modelInfo';
-import {
-  buildBuiltinAcpSessionMcpServers,
-  buildTeamMcpServer,
-  parseAcpMcpCapabilities,
-  type AcpSessionMcpServer,
-} from './mcpSessionConfig';
-import { getClaudeModel } from './utils';
+import { buildAcpModelInfo } from './modelInfo';
+import { buildBuiltinAcpSessionMcpServers, buildTeamMcpServer, type AcpSessionMcpServer } from './mcpSessionConfig';
+import { getClaudeModelSlot } from './utils';
+import { getTeamGuideStdioConfig } from '@process/team/mcp/guide/teamGuideSingleton';
+import { shouldInjectTeamGuideMcp } from '@process/team/prompts/teamGuideCapability.ts';
+import { waitForMcpReady } from '@process/team/mcpReadiness';
 
-/** Enable ACP performance diagnostics via ACP_PERF=1 */
-const ACP_PERF_LOG = process.env.ACP_PERF === '1';
-
-/**
- * Initialize response result interface
- * ACP 初始化响应结果接口
- */
-interface InitializeResult {
-  authMethods?: Array<{
-    type: string;
-    [key: string]: unknown;
-  }>;
-  [key: string]: unknown;
-}
+// InitializeResult removed — replaced by AcpInitializeResult from acpTypes.ts
 
 /**
  * ACP available command type - subset of SlashCommandItem for ACP protocol layer
@@ -328,20 +317,25 @@ export class AcpAgent {
         await new Promise((resolve) => setTimeout(resolve, 300));
         await tryConnect();
       }
-      if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: connection.connect() completed ${Date.now() - connectStart}ms`);
+      console.log(`[ACP-PERF] start: connection.connect() completed ${Date.now() - connectStart}ms`);
+
+      // Persist initialize result to disk so capabilities are available before next session
+      this.cacheInitializeResult().catch((err) => {
+        console.warn('[ACP] Failed to cache initialize result:', err instanceof Error ? err.message : String(err));
+      });
 
       this.emitStatusMessage('connected');
 
       const authStart = Date.now();
       await this.performAuthentication();
-      if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: authentication completed ${Date.now() - authStart}ms`);
+      console.log(`[ACP-PERF] start: authentication completed ${Date.now() - authStart}ms`);
 
       // 避免重复创建会话：仅当尚无活动会话时再创建
       // Create new session or resume existing one (if ACP backend supports it)
       if (!this.connection.hasActiveSession) {
         const sessionStart = Date.now();
         await this.createOrResumeSession();
-        if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: session created ${Date.now() - sessionStart}ms`);
+        console.log(`[ACP-PERF] start: session created ${Date.now() - sessionStart}ms`);
       }
 
       // YOLO mode: bypass all permission checks for supported backends
@@ -362,30 +356,28 @@ export class AcpAgent {
         await this.applySessionMode(this.extra.sessionMode, false, `session mode`);
       }
 
-      // Apply model from ~/.claude/settings.json for Claude backend.
-      // claude-agent-acp may default to a region-mismatched Bedrock model;
-      // explicitly setting the model from settings ensures correctness.
-      // Uses session/set_model (direct CLI control) for consistency with runtime switching.
+      // For Claude backend, keep runtime model selection aligned with the
+      // local Claude slot model (`default` / `opus` / `haiku`).
+      // Do not send the relay's underlying model name (for example glm-5.1x)
+      // to ACP, because claude-agent-acp only accepts slot ids.
       if (this.extra.backend === 'claude') {
-        const configuredModel = getClaudeModel();
+        const configuredModel = readClaudeModelInfoFromCcSwitch()?.currentModelId ?? getClaudeModelSlot();
         if (configuredModel) {
           try {
             const modelStart = Date.now();
             await this.connection.setModel(configuredModel);
-            if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: model set ${Date.now() - modelStart}ms`);
+            console.log(`[ACP-PERF] start: model set ${Date.now() - modelStart}ms`);
           } catch (error) {
             const errMsg = error instanceof Error ? error.message : String(error);
-            console.warn(`[ACP] Failed to set model from settings: ${errMsg}`);
+            console.warn(`[ACP] Failed to set Claude slot model "${configuredModel}": ${errMsg}`);
             // Detect third-party relay/proxy errors (e.g., NewAPI/OneAPI "model_not_found").
-            // These services route by model name and may not have channels configured for
-            // specific model IDs like "claude-sonnet-4-6". Emit a visible warning so the
-            // user knows to update their relay's model configuration.
+            // These services route by the underlying model mapped to the selected slot.
+            // Emit a visible warning so the user knows to update the relay-side mapping.
             if (errMsg.includes('model_not_found') || errMsg.includes('无可用渠道')) {
               this.emitErrorMessage(
-                `Model "${configuredModel}" is not available on your API relay service. ` +
-                  `Please add this model to your relay's channel configuration, ` +
-                  `or update ANTHROPIC_MODEL in ~/.claude/settings.json to a supported model name. ` +
-                  `Falling back to the relay's default model.`
+                `Claude slot "${configuredModel}" could not be activated on your API relay service. ` +
+                  `Please check the model mapping in cc-switch or ~/.claude/settings.json. ` +
+                  `Falling back to the relay's default Claude slot.`
               );
             }
           }
@@ -420,11 +412,24 @@ export class AcpAgent {
       // Emit initial model info after session setup completes
       this.emitModelInfo();
 
+      // Snapshot session capabilities NOW, before streaming updates can modify them.
+      // cacheSessionCapabilities() is queued and may execute later, by which time
+      // config_option_update notifications could have altered the connection state.
+      const capabilitiesSnapshot = {
+        modelInfo: this.getModelInfo(),
+        configOptions: this.connection.getConfigOptions(),
+        modes: this.connection.getModes(),
+      };
+      this.cacheSessionCapabilities(capabilitiesSnapshot).catch((err) => {
+        console.warn('[ACP] Failed to cache session capabilities:', err instanceof Error ? err.message : String(err));
+      });
+
       this.emitStatusMessage('session_active');
-      if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: total ${Date.now() - startTotal}ms`);
+      console.log(`[ACP-PERF] start: total ${Date.now() - startTotal}ms`);
     } catch (error) {
-      if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: failed after ${Date.now() - startTotal}ms`);
+      console.log(`[ACP-PERF] start: failed after ${Date.now() - startTotal}ms`);
       this.emitStatusMessage('error');
+      console.log('error===>', error);
       throw error;
     }
   }
@@ -439,7 +444,7 @@ export class AcpAgent {
     try {
       const modeStart = Date.now();
       await this.connection.setSessionMode(mode);
-      if (ACP_PERF_LOG) console.log(`[ACP-PERF] start: session mode set ${Date.now() - modeStart}ms`);
+      console.log(`[ACP-PERF] start: session mode set ${Date.now() - modeStart}ms`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       if (fatal) {
@@ -497,7 +502,18 @@ export class AcpAgent {
    * Prefers stable configOptions API, falls back to unstable models API.
    */
   getModelInfo(): AcpModelInfo | null {
-    return buildAcpModelInfo(this.connection.getConfigOptions(), this.connection.getModels());
+    const preferredModelInfo = this.extra.backend === 'claude' ? readClaudeModelInfoFromCcSwitch() : null;
+    if (this.extra.backend === 'claude' && this.userModelOverride && preferredModelInfo?.availableModels?.length) {
+      const selectedModel = preferredModelInfo.availableModels.find((model) => model.id === this.userModelOverride);
+      if (selectedModel) {
+        return {
+          ...preferredModelInfo,
+          currentModelId: selectedModel.id,
+          currentModelLabel: selectedModel.label,
+        };
+      }
+    }
+    return buildAcpModelInfo(this.connection.getConfigOptions(), this.connection.getModels(), preferredModelInfo);
   }
 
   /**
@@ -633,9 +649,9 @@ export class AcpAgent {
         const reconnectStart = Date.now();
         try {
           await this.start();
-          if (ACP_PERF_LOG) console.log(`[ACP-PERF] send: auto-reconnect completed ${Date.now() - reconnectStart}ms`);
+          console.log(`[ACP-PERF] send: auto-reconnect completed ${Date.now() - reconnectStart}ms`);
         } catch (reconnectError) {
-          if (ACP_PERF_LOG) console.log(`[ACP-PERF] send: auto-reconnect failed ${Date.now() - reconnectStart}ms`);
+          console.log(`[ACP-PERF] send: auto-reconnect failed ${Date.now() - reconnectStart}ms`);
           const errorMsg = reconnectError instanceof Error ? reconnectError.message : String(reconnectError);
           return {
             success: false,
@@ -681,7 +697,7 @@ export class AcpAgent {
       processedContent = await this.processAtFileReferences(processedContent, data.files);
       const atFileDuration = Date.now() - atFileStart;
       if (atFileDuration > 10) {
-        if (ACP_PERF_LOG) console.log(`[ACP-PERF] send: @file references processed ${atFileDuration}ms`);
+        console.log(`[ACP-PERF] send: @file references processed ${atFileDuration}ms`);
       }
 
       // Re-assert model override before sending prompt.
@@ -721,10 +737,9 @@ export class AcpAgent {
 
       const promptStart = Date.now();
       await this.connection.sendPrompt(processedContent);
-      if (ACP_PERF_LOG)
-        console.log(
-          `[ACP-PERF] send: sendPrompt completed ${Date.now() - promptStart}ms (total send: ${Date.now() - sendStart}ms)`
-        );
+      console.log(
+        `[ACP-PERF] send: sendPrompt completed ${Date.now() - promptStart}ms (total send: ${Date.now() - sendStart}ms)`
+      );
 
       this.statusMessageId = null;
       return { success: true, data: null };
@@ -736,7 +751,7 @@ export class AcpAgent {
           const enhancedMsg =
             `Qwen ACP Internal Error: This usually means authentication failed or ` +
             `the Qwen CLI has compatibility issues. Please try: 1) Restart the application ` +
-            `2) Use 'npx @qwen-code/qwen-code' instead of global qwen 3) Check if you have valid Qwen credentials.`;
+            `2) Use the packaged bun launcher instead of a global qwen install 3) Check if you have valid Qwen credentials.`;
           this.emitErrorMessage(enhancedMsg);
           return {
             success: false,
@@ -1213,13 +1228,17 @@ export class AcpAgent {
    * Notify frontend and clean up internal state
    */
   private handleDisconnect(error: { code: number | null; signal: NodeJS.Signals | null }): void {
-    // Emit finish signal to reset UI loading state
+    // Emit finish signal to reset UI loading state (preserving single-chat behavior).
+    // The agentCrash flag in data lets TeammateManager distinguish a crash from a normal turn end.
     if (this.onSignalEvent) {
       this.onSignalEvent({
         type: 'finish',
         conversation_id: this.id,
         msg_id: uuid(),
-        data: null,
+        data: {
+          error: `Process exited unexpectedly (code: ${error.code}, signal: ${error.signal})`,
+          agentCrash: true,
+        },
       });
     }
 
@@ -1498,58 +1517,96 @@ export class AcpAgent {
    * Create a new session or resume an existing one, and notify upper layer if session ID changed.
    * 创建新会话或恢复现有会话，如果 session ID 变化则通知上层。
    *
-   * Resume strategy per backend:
-   * - Codex:           uses dedicated ACP `session/load` method
-   * - Claude/CodeBuddy: uses `session/new` with `_meta.claudeCode.options.resume`
-   * - Others:          uses `session/new` with generic `resumeSessionId` param
+   * Resume strategy is delegated to AcpConnection.resumeSession()
+   * (capability-driven with Claude-compatible resume path).
    */
   private async createOrResumeSession(): Promise<void> {
     const resumeSessionId = this.extra.acpSessionId;
     const resumeConversationId = this.extra.acpSessionConversationId;
     const mcpServers = await this.loadBuiltinSessionMcpServers();
 
-    // Validate session ownership: only resume if the stored session belongs to this conversation.
-    if (resumeSessionId && resumeConversationId && resumeConversationId !== this.id) {
-      console.warn(
-        `[AcpAgent] Session ${resumeSessionId} belongs to conversation ${resumeConversationId}, ` +
-          `but current conversation is ${this.id}. Discarding stale session and starting fresh.`
-      );
-    } else if (resumeSessionId) {
-      try {
-        let response: { sessionId?: string };
+    // Derive teamId from injected team MCP server name (format: aionui-team-<teamId>)
+    // Only emit MCP status events when running inside a team session.
+    const teamMcpName = this.extra.teamMcpStdioConfig?.name;
+    const teamId = teamMcpName?.startsWith('aionui-team-') ? teamMcpName.slice('aionui-team-'.length) : undefined;
+    const slotId = this.id;
 
-        if (this.extra.backend === 'codex') {
-          // Codex ACP bridge implements session/load (load_session) which calls
-          // resume_thread_from_rollout internally to restore full conversation history.
-          // Codex ignores resumeSessionId in session/new, so we must use session/load.
-          // Pass mcpServers so team MCP tools are registered even on session resume.
-          response = await this.connection.loadSession(resumeSessionId, this.extra.workspace, mcpServers);
-        } else {
-          // Claude/CodeBuddy use _meta in session/new; others use generic resumeSessionId
-          response = await this.connection.newSession(this.extra.workspace, {
-            resumeSessionId,
+    const emitMcpStatus = teamId
+      ? (phase: import('@/common/types/teamTypes').TeamMcpPhase, extra?: { serverCount?: number; error?: string }) => {
+          ipcBridge.team.mcpStatus.emit({ teamId: teamId!, slotId, phase, ...extra });
+        }
+      : null;
+
+    const doSession = async (): Promise<void> => {
+      // Validate session ownership: only resume if the stored session belongs to this conversation.
+      if (resumeSessionId && resumeConversationId && resumeConversationId !== this.id) {
+        console.warn(
+          `[AcpAgent] Session ${resumeSessionId} belongs to conversation ${resumeConversationId}, ` +
+            `but current conversation is ${this.id}. Discarding stale session and starting fresh.`
+        );
+        // Skip resume, fall through to create new session
+      } else if (resumeSessionId) {
+        try {
+          let response: { sessionId?: string };
+
+          emitMcpStatus?.('session_injecting', { serverCount: mcpServers.length });
+          response = await this.connection.resumeSession(resumeSessionId, this.extra.workspace, {
             forkSession: false,
             mcpServers,
           });
+
+          if (mcpServers.length === 0) {
+            emitMcpStatus?.('degraded');
+          } else {
+            emitMcpStatus?.('session_ready', { serverCount: mcpServers.length });
+          }
+
+          if (response.sessionId && response.sessionId !== resumeSessionId) {
+            this.extra.acpSessionId = response.sessionId;
+            this.onSessionIdUpdate?.(response.sessionId);
+          }
+          return;
+        } catch (resumeError) {
+          const error = resumeError instanceof Error ? resumeError.message : String(resumeError);
+          console.warn(`[AcpAgent] Failed to resume session ${resumeSessionId}, creating fresh session:`, error);
+          emitMcpStatus?.('session_error', { error });
         }
-        if (response.sessionId && response.sessionId !== resumeSessionId) {
-          this.extra.acpSessionId = response.sessionId;
-          this.onSessionIdUpdate?.(response.sessionId);
-        }
-        return;
-      } catch (resumeError) {
-        console.warn(
-          `[AcpAgent] Failed to resume session ${resumeSessionId}, creating fresh session:`,
-          resumeError instanceof Error ? resumeError.message : String(resumeError)
-        );
       }
+
+      // No stored session or resume failed — create a brand new session
+      emitMcpStatus?.('session_injecting', { serverCount: mcpServers.length });
+      const response = await this.connection.newSession(this.extra.workspace, { mcpServers });
+
+      if (mcpServers.length === 0) {
+        emitMcpStatus?.('degraded');
+      } else {
+        emitMcpStatus?.('session_ready', { serverCount: mcpServers.length });
+      }
+
+      if (response.sessionId) {
+        this.extra.acpSessionId = response.sessionId;
+        this.onSessionIdUpdate?.(response.sessionId);
+      }
+    };
+
+    try {
+      await doSession();
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      emitMcpStatus?.('session_error', { error });
+      throw err;
     }
 
-    // No stored session or resume failed — create a brand new session
-    const response = await this.connection.newSession(this.extra.workspace, { mcpServers });
-    if (response.sessionId) {
-      this.extra.acpSessionId = response.sessionId;
-      this.onSessionIdUpdate?.(response.sessionId);
+    // Wait for MCP tools to be registered in the backend before allowing
+    // message dispatch. The team-mcp-stdio.js script sends a TCP mcp_ready
+    // notification after server.connect() completes. Without this wait,
+    // the first conversationTurn/start may arrive before the backend has
+    // finished the MCP handshake (initialize → tools/list), causing the
+    // agent to process the message without team tools.
+    if (this.extra.teamMcpStdioConfig && teamId) {
+      emitMcpStatus?.('mcp_tools_waiting');
+      await waitForMcpReady(slotId, 30_000);
+      emitMcpStatus?.('mcp_tools_ready');
     }
   }
 
@@ -1559,8 +1616,10 @@ export class AcpAgent {
       const servers: AcpSessionMcpServer[] = [];
 
       if (Array.isArray(mcpConfig) && mcpConfig.length > 0) {
-        const capabilities = parseAcpMcpCapabilities(this.connection.getInitializeResponse());
-        servers.push(...buildBuiltinAcpSessionMcpServers(mcpConfig as IMcpServer[], capabilities));
+        const mcpCaps = this.connection.getAgentCapabilities()?.mcpCapabilities;
+        if (mcpCaps) {
+          servers.push(...buildBuiltinAcpSessionMcpServers(mcpConfig as IMcpServer[], mcpCaps));
+        }
       }
 
       // Inject team MCP server if this agent belongs to a team (stdio mode)
@@ -1569,12 +1628,37 @@ export class AcpAgent {
         servers.push(teamServer);
       }
 
+      // Inject Aion team-guide MCP server for solo agents (not in team mode already).
+      // Uses stdio bridge mode — same pattern as TeamMcpServer.
+      // AION_MCP_BACKEND env var tells the stdio bridge which backend this agent is,
+      // so aion_create_team automatically creates a team with the correct agent type.
+      if (!this.extra.teamMcpStdioConfig && (await shouldInjectTeamGuideMcp(this.extra.backend))) {
+        const aionStdioConfig = getTeamGuideStdioConfig();
+        if (aionStdioConfig) {
+          const configWithBackend = {
+            ...aionStdioConfig,
+            env: [
+              ...aionStdioConfig.env,
+              { name: 'AION_MCP_BACKEND', value: this.extra.backend },
+              { name: 'AION_MCP_CONVERSATION_ID', value: this.id },
+            ],
+          };
+          servers.push(buildTeamMcpServer(configWithBackend)!);
+        }
+      }
+
       return servers;
     } catch (error) {
-      console.warn(
-        `[ACP ${this.extra.backend}] Failed to load built-in MCP config for session/new:`,
-        error instanceof Error ? error.message : String(error)
-      );
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.warn(`[ACP ${this.extra.backend}] Failed to load built-in MCP config for session/new:`, errMsg);
+      const mcpName = this.extra.teamMcpStdioConfig?.name;
+      const tId =
+        typeof mcpName === 'string' && mcpName.startsWith('aionui-team-')
+          ? mcpName.slice('aionui-team-'.length)
+          : undefined;
+      if (tId) {
+        ipcBridge.team.mcpStatus.emit({ teamId: tId, slotId: this.id, phase: 'load_failed', error: errMsg });
+      }
       return [];
     }
   }
@@ -1618,10 +1702,10 @@ export class AcpAgent {
       let args: string[];
 
       if (this.extra.cliPath.startsWith('npx ')) {
-        // For "npx @qwen-code/qwen-code" or "npx @anthropic-ai/claude-code"
+        // Route legacy npx launchers through bundled bun.
         const parts = this.extra.cliPath.split(' ');
         command = resolveNpxPath(cleanEnv);
-        args = [...parts.slice(1), loginArg];
+        args = ['x', '--bun', ...normalizeNpxArgsForBundledBun(parts.slice(1)), loginArg];
       } else {
         // For regular paths like '/usr/local/bin/qwen' or '/usr/local/bin/claude'
         command = this.extra.cliPath;
@@ -1663,9 +1747,8 @@ export class AcpAgent {
 
   private async performAuthentication(): Promise<void> {
     try {
-      const initResponse = this.connection.getInitializeResponse();
-      const result = initResponse?.result as InitializeResult | undefined;
-      if (!initResponse || !result?.authMethods?.length) {
+      const initResult = this.connection.getInitializeResult();
+      if (!initResult || initResult.authMethods.length === 0) {
         // No auth methods available - CLI should handle authentication itself
         this.emitStatusMessage('authenticated');
         return;
@@ -1703,5 +1786,101 @@ export class AcpAgent {
     } catch (error) {
       this.emitStatusMessage('error');
     }
+  }
+
+  private async cacheInitializeResult(): Promise<void> {
+    const result = this.connection.getInitializeResult();
+    if (!result) return;
+    const cached = (await ProcessConfig.get('acp.cachedInitializeResult')) || {};
+    await ProcessConfig.set('acp.cachedInitializeResult', {
+      ...cached,
+      [this.extra.backend]: result,
+    });
+  }
+
+  /**
+   * Read the cached initialize result for a backend from disk.
+   * Available before any session is created (persisted from previous runs).
+   */
+  static async getCachedInitializeResult(backend: string): Promise<AcpInitializeResult | null> {
+    const cached = await ProcessConfig.get('acp.cachedInitializeResult');
+    return cached?.[backend] ?? null;
+  }
+
+  // Serialize concurrent cache writes to prevent read-modify-write races
+  // when multiple backends start simultaneously.
+  private static cacheQueue: Promise<void> = Promise.resolve();
+
+  /**
+   * Cache session-level capabilities (models, configOptions, modes) to disk.
+   * Same pattern as cacheInitializeResult — persisted across sessions so
+   * Guid page / AgentModeSelector / AcpConfigSelector can render from cache
+   * before an active session exists.
+   *
+   * Accepts a pre-captured snapshot to avoid reading stale connection state —
+   * streaming notifications (config_option_update) can modify the connection's
+   * configOptions between when the snapshot is taken and when this runs.
+   *
+   * Uses a static queue to serialize writes — multiple backends starting
+   * concurrently would otherwise overwrite each other's cache entries.
+   */
+  private cacheSessionCapabilities(snapshot: {
+    modelInfo: AcpModelInfo | null;
+    configOptions: AcpSessionConfigOption[] | null;
+    modes: AcpSessionModes | null;
+  }): Promise<void> {
+    const job = AcpAgent.cacheQueue.then(() => this.doCacheSessionCapabilities(snapshot));
+    AcpAgent.cacheQueue = job.catch(() => {});
+    return job;
+  }
+
+  private async doCacheSessionCapabilities(snapshot: {
+    modelInfo: AcpModelInfo | null;
+    configOptions: AcpSessionConfigOption[] | null;
+    modes: AcpSessionModes | null;
+  }): Promise<void> {
+    // Cache model info
+    if (snapshot.modelInfo && snapshot.modelInfo.availableModels?.length > 0) {
+      const cachedModels = (await ProcessConfig.get('acp.cachedModels')) || {};
+      // Preserve the original default model from the first session, not from user switches
+      const existing = cachedModels[this.extra.backend];
+      const nextModelInfo = {
+        ...snapshot.modelInfo,
+        currentModelId: existing?.currentModelId ?? snapshot.modelInfo.currentModelId,
+        currentModelLabel: existing?.currentModelLabel ?? snapshot.modelInfo.currentModelLabel,
+      };
+      await ProcessConfig.set('acp.cachedModels', {
+        ...cachedModels,
+        [this.extra.backend]: nextModelInfo,
+      });
+    }
+
+    // Cache configOptions (for backends that provide them, e.g. codex)
+    if (Array.isArray(snapshot.configOptions) && snapshot.configOptions.length > 0) {
+      const cachedOptions = (await ProcessConfig.get('acp.cachedConfigOptions')) || {};
+      await ProcessConfig.set('acp.cachedConfigOptions', {
+        ...cachedOptions,
+        [this.extra.backend]: snapshot.configOptions,
+      });
+    }
+
+    // Cache top-level modes (for backends that use modes object, e.g. qoder, opencode)
+    if (snapshot.modes?.availableModes && snapshot.modes.availableModes.length > 0) {
+      const cachedModes = (await ProcessConfig.get('acp.cachedModes')) || {};
+      await ProcessConfig.set('acp.cachedModes', {
+        ...cachedModes,
+        [this.extra.backend]: snapshot.modes,
+      });
+    }
+  }
+
+  /**
+   * Read the cached config options for a backend from disk.
+   * Available before any session is created (persisted from previous runs).
+   */
+  static async getCachedConfigOptions(backend: string): Promise<AcpSessionConfigOption[] | null> {
+    const cached = await ProcessConfig.get('acp.cachedConfigOptions');
+    const options = cached?.[backend];
+    return Array.isArray(options) ? options : null;
   }
 }

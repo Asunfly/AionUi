@@ -9,9 +9,9 @@ import type { TTeam, TeamAgent } from './types';
 import { Mailbox } from './Mailbox';
 import { TaskManager } from './TaskManager';
 import { TeammateManager } from './TeammateManager';
-import { TeamMcpServer, type StdioMcpConfig } from './TeamMcpServer';
+import { TeamMcpServer, type StdioMcpConfig } from './mcp/team/TeamMcpServer';
 
-type SpawnAgentFn = (agentName: string, agentType?: string) => Promise<TeamAgent>;
+type SpawnAgentFn = (agentName: string, agentType?: string, model?: string) => Promise<TeamAgent>;
 
 /**
  * Thin coordinator that owns Mailbox, TaskManager, TeammateManager, and MCP server.
@@ -25,6 +25,7 @@ export class TeamSession extends EventEmitter {
   private readonly mailbox: Mailbox;
   private readonly taskManager: TaskManager;
   private readonly teammateManager: TeammateManager;
+  private readonly workerTaskManager: IWorkerTaskManager;
   private readonly mcpServer: TeamMcpServer;
   private mcpStdioConfig: StdioMcpConfig | null = null;
 
@@ -33,15 +34,18 @@ export class TeamSession extends EventEmitter {
     this.team = team;
     this.teamId = team.id;
     this.repo = repo;
+    this.workerTaskManager = workerTaskManager;
     this.mailbox = new Mailbox(repo);
     this.taskManager = new TaskManager(repo);
     this.teammateManager = new TeammateManager({
       teamId: team.id,
       agents: team.agents,
       mailbox: this.mailbox,
-      taskManager: this.taskManager,
       workerTaskManager,
-      spawnAgent,
+      teamWorkspace: team.workspace || undefined,
+      onAgentRemoved: (teamId, agents) => {
+        void this.repo.update(teamId, { agents, updatedAt: Date.now() });
+      },
     });
 
     // Create MCP server for team coordination tools
@@ -56,8 +60,8 @@ export class TeamSession extends EventEmitter {
         void this.repo.update(team.id, { agents: this.teammateManager.getAgents(), updatedAt: Date.now() });
       },
       removeAgent: (slotId: string) => {
+        // removeAgent already persists via onAgentRemoved callback
         this.teammateManager.removeAgent(slotId);
-        void this.repo.update(team.id, { agents: this.teammateManager.getAgents(), updatedAt: Date.now() });
       },
       wakeAgent: (slotId: string) => this.teammateManager.wake(slotId),
     });
@@ -70,7 +74,6 @@ export class TeamSession extends EventEmitter {
   async startMcpServer(): Promise<StdioMcpConfig> {
     if (!this.mcpStdioConfig) {
       this.mcpStdioConfig = await this.mcpServer.start();
-      this.teammateManager.setHasMcpTools(true);
     }
     return this.mcpStdioConfig;
   }
@@ -84,10 +87,24 @@ export class TeamSession extends EventEmitter {
   }
 
   /**
+   * Best-effort wake after a message has already been durably accepted into the
+   * team mailbox. Wake failures must not be reported as send failures to the
+   * renderer, otherwise the queue may re-enqueue an already-delivered message.
+   */
+  private async wakeAfterAcceptedDelivery(slotId: string, context: 'team' | 'agent'): Promise<void> {
+    try {
+      await this.teammateManager.wake(slotId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[TeamSession] Accepted ${context} message but failed to wake ${slotId}:`, message);
+    }
+  }
+
+  /**
    * Send a user message to the team.
    * Ensures MCP server is started, then writes to the lead agent's mailbox and wakes the lead.
    */
-  async sendMessage(content: string): Promise<void> {
+  async sendMessage(content: string, files?: string[]): Promise<void> {
     // Ensure MCP server is running before waking agents
     await this.startMcpServer();
 
@@ -99,6 +116,7 @@ export class TeamSession extends EventEmitter {
       toAgentId: leadSlotId,
       fromAgentId: 'user',
       content,
+      files,
     });
 
     // Persist user message in lead's conversation so it appears as a user bubble in the chat UI
@@ -122,14 +140,18 @@ export class TeamSession extends EventEmitter {
       });
     }
 
-    await this.teammateManager.wake(leadSlotId);
+    await this.wakeAfterAcceptedDelivery(leadSlotId, 'team');
   }
 
   /**
    * Send a user message directly to a specific agent (by slotId), bypassing the lead.
    * Ensures MCP server is running, writes to agent's mailbox, persists user bubble, then wakes the agent.
    */
-  async sendMessageToAgent(slotId: string, content: string): Promise<void> {
+  async sendMessageToAgent(
+    slotId: string,
+    content: string,
+    options?: { silent?: boolean; files?: string[] }
+  ): Promise<void> {
     await this.startMcpServer();
 
     await this.mailbox.write({
@@ -137,10 +159,14 @@ export class TeamSession extends EventEmitter {
       toAgentId: slotId,
       fromAgentId: 'user',
       content,
+      files: options?.files,
     });
 
+    // When silent, skip the user bubble — the content still reaches the agent
+    // via mailbox → buildRolePrompt "Unread Messages". Used when the leader's
+    // conversation is reused and already contains the full user context.
     const agent = this.teammateManager.getAgents().find((a) => a.slotId === slotId);
-    if (agent?.conversationId) {
+    if (agent?.conversationId && !options?.silent) {
       const msgId = crypto.randomUUID();
       const userMessage: TMessage = {
         id: msgId,
@@ -160,7 +186,7 @@ export class TeamSession extends EventEmitter {
       });
     }
 
-    await this.teammateManager.wake(slotId);
+    await this.wakeAfterAcceptedDelivery(slotId, 'agent');
   }
 
   /** Rename an agent and persist to DB */
@@ -184,12 +210,20 @@ export class TeamSession extends EventEmitter {
     return this.teammateManager.getAgents();
   }
 
-  /** Clean up all IPC listeners, MCP server, and EventEmitter handlers */
+  /** Clean up all IPC listeners, MCP server, kill agent processes, and EventEmitter handlers */
   async dispose(): Promise<void> {
-    this.teammateManager.setHasMcpTools(false);
+    // Kill all agent processes before clearing listeners
+    for (const agent of this.teammateManager.getAgents()) {
+      if (agent.conversationId) {
+        this.workerTaskManager.kill(agent.conversationId);
+      }
+    }
     this.teammateManager.dispose();
-    await this.mcpServer.stop();
-    this.mcpStdioConfig = null;
-    this.removeAllListeners();
+    try {
+      await this.mcpServer.stop();
+    } finally {
+      this.mcpStdioConfig = null;
+      this.removeAllListeners();
+    }
   }
 }

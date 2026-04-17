@@ -7,8 +7,6 @@ export type {
   WorkspaceMode,
   MailboxMessage,
   TeamTask,
-  ParsedAction,
-  ITeamMessageEvent,
   ITeamAgentStatusEvent,
 } from './types';
 export { TeamSession } from './TeamSession';

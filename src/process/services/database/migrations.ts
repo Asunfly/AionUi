@@ -1117,6 +1117,68 @@ const migration_v22: IMigration = {
 };
 
 /**
+ * Migration v22 -> v23: Add session_mode column to teams table
+ * Persists the team-level session permission mode so newly spawned agents
+ * inherit the correct mode without falling back to the lead agent's extra.
+ */
+const migration_v23: IMigration = {
+  version: 23,
+  name: 'Add session_mode to teams table',
+  up: (db) => {
+    const columns = new Set((db.pragma('table_info(teams)') as Array<{ name: string }>).map((c) => c.name));
+    if (!columns.has('session_mode')) {
+      db.exec('ALTER TABLE teams ADD COLUMN session_mode TEXT');
+    }
+    console.log('[Migration v23] Added session_mode column to teams table');
+  },
+  down: (_db) => {
+    // SQLite does not support DROP COLUMN before 3.35.0; skip rollback to prevent data loss.
+    console.warn('[Migration v23] Rollback skipped: cannot drop columns safely.');
+  },
+};
+
+/**
+ * Migration v23 -> v24: Add description to cron_jobs table
+ */
+const migration_v24: IMigration = {
+  version: 24,
+  name: 'Add description to cron_jobs table',
+  up: (db) => {
+    const cronColumns = new Set((db.pragma('table_info(cron_jobs)') as Array<{ name: string }>).map((c) => c.name));
+    if (!cronColumns.has('description')) {
+      db.exec('ALTER TABLE cron_jobs ADD COLUMN description TEXT');
+    }
+    console.log('[Migration v24] Added description column to cron_jobs table');
+  },
+  down: (_db) => {
+    // SQLite does not support DROP COLUMN before 3.35.0; skip rollback to prevent data loss.
+    console.warn('[Migration v24] Rollback skipped: cannot drop columns safely.');
+  },
+};
+
+/**
+ * Migration v24 -> v25: Add files column to mailbox table
+ * Stores JSON-serialized file paths so team mode can forward attachments to agents.
+ */
+const migration_v25: IMigration = {
+  version: 25,
+  name: 'Add files column to mailbox table',
+  up: (db) => {
+    const columns = new Set((db.pragma('table_info(mailbox)') as Array<{ name: string }>).map((c) => c.name));
+    if (!columns.has('files')) {
+      db.exec('ALTER TABLE mailbox ADD COLUMN files TEXT');
+      console.log('[Migration v25] Added files column to mailbox table');
+    } else {
+      console.log('[Migration v25] files column already exists, skipping');
+    }
+  },
+  down: (_db) => {
+    // SQLite does not support DROP COLUMN before 3.35.0; skip rollback to prevent data loss.
+    console.warn('[Migration v25] Rollback skipped: cannot drop columns safely.');
+  },
+};
+
+/**
  * All migrations in order
  */
 // prettier-ignore
@@ -1124,7 +1186,8 @@ export const ALL_MIGRATIONS: IMigration[] = [
   migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6,
   migration_v7, migration_v8, migration_v9, migration_v10, migration_v11, migration_v12,
   migration_v13, migration_v14, migration_v15, migration_v16, migration_v17, migration_v18,
-  migration_v19, migration_v20, migration_v21, migration_v22,
+  migration_v19, migration_v20, migration_v21, migration_v22, migration_v23, migration_v24,
+  migration_v25,
 ];
 
 /**

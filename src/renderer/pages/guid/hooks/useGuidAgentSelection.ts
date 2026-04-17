@@ -60,6 +60,9 @@ type UseGuidAgentSelectionOptions = {
   modelList: IProvider[];
   isGoogleAuth: boolean;
   localeKey: string;
+  resetAssistant?: boolean;
+  /** React Router location.key — changes on every navigation, used to detect new resets. */
+  locationKey?: string;
 };
 
 /**
@@ -69,13 +72,14 @@ export const useGuidAgentSelection = ({
   modelList,
   isGoogleAuth,
   localeKey,
+  resetAssistant,
+  locationKey,
 }: UseGuidAgentSelectionOptions): GuidAgentSelectionResult => {
   const [selectedAgentKey, _setSelectedAgentKey] = useState<string>('aionrs');
   const [availableAgents, setAvailableAgents] = useState<AvailableAgent[]>();
   const [selectedMode, _setSelectedMode] = useState<string>('default');
   // Track whether mode was loaded from preferences to avoid overwriting during initial load
   const selectedAgentRef = useRef<string | null>(null);
-  const probedModelBackendsRef = useRef(new Set<string>());
   const [acpCachedModels, setAcpCachedModels] = useState<Record<string, AcpModelInfo>>({});
   const [selectedAcpModel, _setSelectedAcpModel] = useState<string | null>(null);
   const [cachedConfigOptions, setCachedConfigOptions] = useState<AcpSessionConfigOption[]>([]);
@@ -211,9 +215,36 @@ export const useGuidAgentSelection = ({
     setAvailableAgents([...availableAgentsData, ...remoteAsAvailable]);
   }, [availableAgentsData, remoteAgentsData]);
 
-  // Load last selected agent
+  // Track whether the resetAssistant flag has been consumed so it only fires once
+  // per navigation. Use locationKey (changes on every navigate()) to reset the guard,
+  // because window.history.replaceState does NOT update React Router's location.state.
+  const resetHandledRef = useRef(false);
+  const prevLocationKeyRef = useRef(locationKey);
+  if (locationKey !== prevLocationKeyRef.current) {
+    prevLocationKeyRef.current = locationKey;
+    resetHandledRef.current = false;
+  }
+
+  // Load last selected agent (or reset to default when resetAssistant is requested)
   useEffect(() => {
     if (!availableAgents || availableAgents.length === 0) return;
+
+    // When the sidebar "新对话" navigates with resetAssistant, skip loading
+    // from storage and immediately fall through to the default agent.
+    // This also persists the default so the next load won't restore the old preset.
+    if (resetAssistant && !resetHandledRef.current) {
+      resetHandledRef.current = true;
+      const firstCliAgent = availableAgents.find((a) => !a.isPreset);
+      const fallbackKey = firstCliAgent ? getAgentKey(firstCliAgent) : 'aionrs';
+      _setSelectedAgentKey(fallbackKey);
+      ConfigStorage.set('guid.lastSelectedAgent', fallbackKey).catch((error) => {
+        console.error('Failed to save reset agent key:', error);
+      });
+      return;
+    }
+
+    // Skip normal load when resetAssistant is still in location state (already handled above)
+    if (resetAssistant) return;
 
     let cancelled = false;
 
@@ -246,7 +277,7 @@ export const useGuidAgentSelection = ({
     return () => {
       cancelled = true;
     };
-  }, [availableAgents]);
+  }, [availableAgents, resetAssistant, locationKey]);
 
   // Load cached ACP model lists
   useEffect(() => {
@@ -263,54 +294,6 @@ export const useGuidAgentSelection = ({
       isActive = false;
     };
   }, []);
-
-  // Probe Codex model info on first selection so the Guid page can show
-  // the real account-scoped models before the first conversation starts.
-  useEffect(() => {
-    if (selectedAgentKey !== 'codex') return;
-    if (probedModelBackendsRef.current.has('codex')) return;
-
-    let cancelled = false;
-    probedModelBackendsRef.current.add('codex');
-
-    ipcBridge.acpConversation.probeModelInfo
-      .invoke({ backend: 'codex' })
-      .then(async (result) => {
-        if (cancelled) return;
-        const modelInfo = result.success ? result.data?.modelInfo : null;
-        if (!modelInfo?.availableModels?.length) {
-          probedModelBackendsRef.current.delete('codex');
-          return;
-        }
-
-        console.log('[Guid][codex] Probed model info:', modelInfo);
-
-        const cached = (await ConfigStorage.get('acp.cachedModels').catch(() => ({}))) || {};
-        if (cancelled) return;
-
-        const nextCachedModels = {
-          ...cached,
-          codex: modelInfo,
-        };
-
-        setAcpCachedModels((prev) => ({
-          ...prev,
-          codex: modelInfo,
-        }));
-
-        await ConfigStorage.set('acp.cachedModels', nextCachedModels).catch((error) => {
-          console.error('Failed to save probed ACP model info:', error);
-        });
-      })
-      .catch((error) => {
-        probedModelBackendsRef.current.delete('codex');
-        console.warn('[Guid][codex] Failed to probe model info:', error);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAgentKey]);
 
   const currentEffectiveAgentInfo = useMemo(() => {
     if (!isPresetAgent) {
@@ -338,7 +321,13 @@ export const useGuidAgentSelection = ({
       .then((cached) => {
         if (!isActive) return;
         const options = cached?.[backend];
-        setCachedConfigOptions(Array.isArray(options) ? options : []);
+        // Filter out model/mode categories — those are handled by AcpModelSelector / AgentModeSelector
+        const filtered = Array.isArray(options)
+          ? (options as Array<{ category?: string }>).filter(
+              (opt) => opt.category !== 'model' && opt.category !== 'mode'
+            )
+          : [];
+        setCachedConfigOptions(filtered as AcpSessionConfigOption[]);
         setPendingConfigOptions({});
       })
       .catch(() => {
@@ -406,6 +395,9 @@ export const useGuidAgentSelection = ({
           const config = await ConfigStorage.get('gemini.config');
           preferred = config?.preferredMode;
           yoloMode = config?.yoloMode ?? false;
+        } else if (configKey === 'aionrs') {
+          const config = await ConfigStorage.get('aionrs.config');
+          preferred = config?.preferredMode;
         } else {
           const config = await ConfigStorage.get('acp.config');
           const backendConfig = config?.[configKey as AcpBackend] as Record<string, unknown> | undefined;

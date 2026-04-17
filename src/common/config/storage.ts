@@ -62,10 +62,14 @@ export interface IConfigStorageRefer {
   /** Idle timeout in minutes before an ACP agent process is killed to reclaim memory (default: 5). */
   'acp.agentIdleTimeout'?: number;
   'acp.customAgents'?: AcpBackendConfig[];
+  // Cached initialize results per ACP backend (persisted across sessions)
+  'acp.cachedInitializeResult'?: Record<string, import('@/common/types/acpTypes').AcpInitializeResult>;
   // Cached model lists per ACP backend for Guid page pre-selection
   'acp.cachedModels'?: Record<string, import('@/common/types/acpTypes').AcpModelInfo>;
   // Cached config options per ACP backend for Guid page pre-selection
   'acp.cachedConfigOptions'?: Record<string, import('@/common/types/acpTypes').AcpSessionConfigOption[]>;
+  // Cached modes per ACP backend for Guid page / AgentModeSelector
+  'acp.cachedModes'?: Record<string, import('@/common/types/acpTypes').AcpSessionModes>;
   'model.config': IProvider[];
   'mcp.config': IMcpServer[];
   'mcp.agentInstallStatus': Record<string, string[]>;
@@ -84,6 +88,11 @@ export interface IConfigStorageRefer {
   'css.themes': ICssTheme[]; // 自定义 CSS 主题列表 / Custom CSS themes list
   'css.activeThemeId': string; // 当前激活的主题 ID / Currently active theme ID
   'gemini.defaultModel': string | { id: string; useModel: string };
+  'aionrs.config'?: {
+    /** Preferred session mode for new conversations / 新会话的默认模式 */
+    preferredMode?: string;
+  };
+  'aionrs.defaultModel'?: { id: string; useModel: string };
   'tools.imageGenerationModel': TProviderWithModel & {
     /** @deprecated Image generation is now controlled via built-in MCP server toggle */
     switch?: boolean;
@@ -116,6 +125,8 @@ export interface IConfigStorageRefer {
   'system.keepAwake'?: boolean;
   // Whether conversation command queue is enabled
   'system.commandQueueEnabled'?: boolean;
+  // Automatically preview newly created Office files in the current workspace
+  'system.autoPreviewOfficeFiles'?: boolean;
   // Telegram assistant default model / Telegram 助手默认模型
   'assistant.telegram.defaultModel'?: {
     id: string;
@@ -160,6 +171,17 @@ export interface IConfigStorageRefer {
     customAgentId?: string;
     name?: string;
   };
+  // WeCom assistant default model / 企业微信助手默认模型
+  'assistant.wecom.defaultModel'?: {
+    id: string;
+    useModel: string;
+  };
+  // WeCom assistant agent selection / 企业微信助手所使用的 Agent
+  'assistant.wecom.agent'?: {
+    backend: AcpBackendAll;
+    customAgentId?: string;
+    name?: string;
+  };
   // Skills Market: whether the aionui-skills builtin skill is enabled
   'skillsMarket.enabled'?: boolean;
   // Desktop Pet: whether the desktop pet feature is enabled
@@ -184,7 +206,7 @@ export interface IEnvStorageRefer {
  * Conversation source type - identifies where the conversation was created
  * 会话来源类型 - 标识会话创建的来源
  */
-export type ConversationSource = 'aionui' | 'telegram' | 'lark' | 'dingtalk' | 'weixin' | (string & {});
+export type ConversationSource = 'aionui' | 'telegram' | 'lark' | 'dingtalk' | 'weixin' | 'wecom' | (string & {});
 
 interface IChatConversation<T, Extra> {
   createTime: number;

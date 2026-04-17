@@ -18,19 +18,19 @@ const TeamPermissionContext = createContext<TeamPermissionContextValue | null>(n
 
 export const TeamPermissionProvider: React.FC<{
   children: React.ReactNode;
+  teamId: string;
   isLeadAgent: boolean;
   leadConversationId: string;
   allConversationIds: string[];
-}> = ({ children, isLeadAgent, leadConversationId, allConversationIds }) => {
+}> = ({ children, teamId, isLeadAgent, leadConversationId, allConversationIds }) => {
   const propagateMode = useCallback(
     (mode: string) => {
-      for (const conversationId of allConversationIds) {
-        void ipcBridge.acpConversation.setMode.invoke({ conversationId, mode }).catch(() => {
-          // Silently ignore failures for non-ACP agents (e.g. gemini, codex) that don't support setMode
-        });
-      }
+      // Persist sessionMode on the team record so newly spawned agents inherit it
+      void ipcBridge.team.setSessionMode.invoke({ teamId, sessionMode: mode }).catch(() => {
+        // Best-effort: if this fails, agents still get mode via per-conversation setMode below
+      });
     },
-    [allConversationIds]
+    [teamId]
   );
 
   const value = useMemo<TeamPermissionContextValue>(

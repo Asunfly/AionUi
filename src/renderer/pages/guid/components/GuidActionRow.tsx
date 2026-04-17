@@ -10,13 +10,13 @@ import AcpConfigSelector from '@/renderer/components/agent/AcpConfigSelector';
 import { getAgentModes, supportsModeSwitch, type AgentModeOption } from '@/renderer/utils/model/agentModes';
 import type { AcpSessionConfigOption } from '@/common/types/acpTypes';
 import { useLayoutContext } from '@/renderer/hooks/context/LayoutContext';
-import { getCleanFileNames, FileService, MAX_UPLOAD_SIZE_MB } from '@/renderer/services/FileService';
+import { getCleanFileNames, FileService } from '@/renderer/services/FileService';
 import { iconColors } from '@/renderer/styles/colors';
 import { isElectronDesktop } from '@/renderer/utils/platform';
 import type { AcpBackend, AcpBackendConfig, AvailableAgent } from '../types';
 import PresetAgentTag, { type AgentSwitcherItem } from './PresetAgentTag';
 import { Button, Dropdown, Menu, Message, Tooltip } from '@arco-design/web-react';
-import { ArrowUp, FolderOpen, Plus, Shield, UploadOne } from '@icon-park/react';
+import { ArrowUp, Brain, FolderOpen, Plus, Shield, UploadOne } from '@icon-park/react';
 import React, { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import styles from '../index.module.css';
@@ -110,12 +110,7 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
           onFilesUploaded(processed.map((f) => f.path));
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : '';
-        if (msg === 'FILE_TOO_LARGE') {
-          Message.error(t('common.fileAttach.tooLarge', { max: MAX_UPLOAD_SIZE_MB }));
-        } else {
-          Message.error(t('common.fileAttach.failed'));
-        }
+        Message.error(t('common.fileAttach.failed'));
       } finally {
         setUploading(false);
       }
@@ -248,7 +243,9 @@ const GuidActionRow: React.FC<GuidActionRowProps> = ({
           )}
           <AcpConfigSelector
             backend={configOptionsBackend}
+            buttonClassName='guid-config-btn'
             initialConfigOptions={cachedConfigOptions}
+            leadingIcon={<Brain theme='outline' size='14' fill={iconColors.secondary} />}
             onOptionSelect={onConfigOptionSelect}
           />
         </div>

@@ -12,6 +12,7 @@ import { ConversationServiceImpl } from '@process/services/ConversationServiceIm
 import { cronService } from '@process/services/cron/cronServiceSingleton';
 import { workerTaskManager } from '@process/task/workerTaskManagerSingleton';
 import { TeamSessionService, SqliteTeamRepository } from '@process/team';
+import { initTeamGuideService } from '@process/team/mcp/guide/teamGuideSingleton';
 
 logger.config({ print: true });
 
@@ -33,4 +34,9 @@ initAllBridges({
 // Initialize cron service (load jobs from database and start timers)
 void cronService.init().catch((error) => {
   console.error('[initBridge] Failed to initialize CronService:', error);
+});
+
+// Start in-process Aion MCP server for team-guide tools (aion_create_team)
+void initTeamGuideService(teamSessionService).catch((error) => {
+  console.error('[initBridge] Failed to initialize TeamGuideMcpServer:', error);
 });

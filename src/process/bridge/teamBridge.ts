@@ -80,17 +80,23 @@ export function initTeamBridge(teamSessionService: TeamSessionService): void {
     })
   );
 
+  ipcBridge.team.setSessionMode.provider(
+    safeProvider(async ({ teamId, sessionMode }) => {
+      await teamSessionService.setSessionMode(teamId, sessionMode);
+    })
+  );
+
   ipcBridge.team.sendMessage.provider(
-    safeProvider(async ({ teamId, content }) => {
+    safeProvider(async ({ teamId, content, files }) => {
       const session = await teamSessionService.getOrStartSession(teamId);
-      await session.sendMessage(content);
+      await session.sendMessage(content, files);
     })
   );
 
   ipcBridge.team.sendMessageToAgent.provider(
-    safeProvider(async ({ teamId, slotId, content }) => {
+    safeProvider(async ({ teamId, slotId, content, files }) => {
       const session = await teamSessionService.getOrStartSession(teamId);
-      await session.sendMessageToAgent(slotId, content);
+      await session.sendMessageToAgent(slotId, content, { files });
     })
   );
 
