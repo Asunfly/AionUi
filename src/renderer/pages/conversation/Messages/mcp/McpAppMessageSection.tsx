@@ -28,6 +28,9 @@ type McpAppMessageSectionProps = {
 
 export type McpAppRenderState = 'raw' | 'enable_prompt' | 'trust_prompt' | 'render';
 
+const CONFIG_REFRESH_INTERVAL_MS = 1000;
+const CONFIG_REFRESH_MAX_ATTEMPTS = 10;
+
 export function getMcpAppRenderState(args: {
   hasUiMeta: boolean;
   enabled: boolean;
@@ -48,20 +51,59 @@ const McpAppMessageSection: React.FC<McpAppMessageSectionProps> = ({ mcp, rawCon
   const [serverConfig, setServerConfig] = useState<IMcpServer | null>(null);
 
   useEffect(() => {
-    if (!mcp.serverName) return;
+    let cancelled = false;
+
+    if (!mcp.serverName) {
+      setServerConfig(null);
+      return;
+    }
 
     void ConfigStorage.get('mcp.config').then((servers) => {
+      if (cancelled) return;
       const found = servers?.find((server) => server.name === mcp.serverName) ?? null;
       setServerConfig(found);
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [mcp.serverName]);
 
   const resolvedUiMeta = uiMeta ?? serverConfig?.tools?.find((tool) => tool.name === mcp.toolName)?._meta?.ui;
+  const trusted = serverConfig ? isServerTrusted(getMcpAppTrustKey(serverConfig)) : false;
+
+  useEffect(() => {
+    if (!enabled || uiMeta?.resourceUri || resolvedUiMeta?.resourceUri || !mcp.serverName) {
+      return;
+    }
+
+    let cancelled = false;
+    let attempts = 0;
+    const refreshConfig = () => {
+      attempts += 1;
+      void ConfigStorage.get('mcp.config').then((servers) => {
+        if (cancelled) return;
+        const found = servers?.find((server) => server.name === mcp.serverName) ?? null;
+        setServerConfig(found);
+      });
+
+      if (attempts >= CONFIG_REFRESH_MAX_ATTEMPTS) {
+        clearInterval(intervalId);
+      }
+    };
+    const intervalId = window.setInterval(refreshConfig, CONFIG_REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [enabled, mcp.serverName, mcp.toolName, resolvedUiMeta?.resourceUri, uiMeta?.resourceUri]);
+
   const renderState = getMcpAppRenderState({
     hasUiMeta: Boolean(resolvedUiMeta?.resourceUri),
     enabled,
     hasServerConfig: Boolean(serverConfig),
-    trusted: serverConfig ? isServerTrusted(getMcpAppTrustKey(serverConfig)) : false,
+    trusted,
   });
   const canRenderApp = renderState === 'render';
 

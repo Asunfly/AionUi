@@ -38,6 +38,7 @@
     "searchPlaceholder": "搜索技能...",
     "noSearchResults": "未找到相关技能"
   },
+  "noExternalSources": "未发现外部技能来源",
   "authMethod": "认证",
   "geminiApiKey": "Gemini API 密钥",
   "vertexApiKey": "Vertex AI",
@@ -779,6 +780,7 @@
   "weixin": {
     "accountId": "账号 ID",
     "scanPrompt": "请用微信扫描二维码",
+    "loginRequired": "请先使用微信二维码登录",
     "loginButton": "扫码登录",
     "connected": "已连接",
     "disconnect": "断开连接",

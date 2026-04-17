@@ -196,6 +196,10 @@
     "noMatch": "未找到匹配内容",
     "count": "{{count}} 条"
   },
+  "thinking": {
+    "label": "思考中...",
+    "complete": "思考完成"
+  },
   "chat": {
     "noModelSelected": "当前会话未选择模型，无法发送消息",
     "sendMessageTo": "发送消息到 {{model}}",

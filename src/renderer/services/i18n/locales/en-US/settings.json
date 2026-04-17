@@ -38,6 +38,7 @@
     "searchPlaceholder": "Search skills...",
     "noSearchResults": "No matching skills found"
   },
+  "noExternalSources": "No external skill sources discovered",
   "authMethod": "Authentication",
   "geminiApiKey": "Gemini API Key",
   "vertexApiKey": "Vertex AI",
@@ -779,6 +780,7 @@
   "weixin": {
     "accountId": "Account ID",
     "scanPrompt": "Please scan the QR code with WeChat",
+    "loginRequired": "Please login with WeChat QR code first",
     "loginButton": "Scan to Login",
     "connected": "Connected",
     "disconnect": "Disconnect",

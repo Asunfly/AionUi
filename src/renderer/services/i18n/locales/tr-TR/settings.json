@@ -38,6 +38,7 @@
     "searchPlaceholder": "Beceri ara...",
     "noSearchResults": "İlgili beceri bulunamadı"
   },
+  "noExternalSources": "Harici beceri kaynagi bulunamadi",
   "authMethod": "Kimlik Doğrulama",
   "geminiApiKey": "Gemini API Anahtarı",
   "vertexApiKey": "Vertex AI",
@@ -779,6 +780,7 @@
   "weixin": {
     "accountId": "Hesap ID",
     "scanPrompt": "WeChat ile QR kodunu tarayin",
+    "loginRequired": "Lutfen once WeChat QR kodu ile giris yapin",
     "loginButton": "Tarayarak giris yap",
     "connected": "Bagli",
     "disconnect": "Baglanti kes",

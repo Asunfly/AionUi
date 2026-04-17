@@ -191,6 +191,10 @@
     "noMatch": "Eşleşen içerik bulunamadı",
     "count": "{{count}} dönüş"
   },
+  "thinking": {
+    "label": "Dusunuyor...",
+    "complete": "Dusunce tamamlandi"
+  },
   "chat": {
     "noModelSelected": "Mevcut oturum için model seçilmedi, mesaj gönderilemiyor",
     "sendMessageTo": "{{model}} modeline mesaj gönder",
