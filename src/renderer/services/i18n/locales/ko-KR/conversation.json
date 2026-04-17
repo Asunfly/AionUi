@@ -195,6 +195,10 @@
     "noMatch": "일치하는 내용이 없습니다",
     "count": "{{count}} 건"
   },
+  "thinking": {
+    "label": "생각 중...",
+    "complete": "생각 완료"
+  },
   "chat": {
     "noModelSelected": "현재 세션에 선택된 모델이 없어 메시지를 보낼 수 없습니다",
     "sendMessageTo": "{{model}}에게 메시지 보내기",

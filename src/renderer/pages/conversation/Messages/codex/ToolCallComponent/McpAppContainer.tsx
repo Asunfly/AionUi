@@ -53,7 +53,9 @@ function stableSerialize(value: unknown): string {
     return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
   }
 
-  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
+  const entries = Object.entries(value as Record<string, unknown>).toSorted(([left], [right]) =>
+    left.localeCompare(right)
+  );
   return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`).join(',')}}`;
 }
 
@@ -173,6 +175,13 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
     }
   }, []);
 
+  const teardownBridge = useCallback((reason: 'resource-change' | 'unmount') => {
+    if (!bridgeRef.current) return;
+
+    void bridgeRef.current.teardownResource({ reason }).catch(() => {});
+    bridgeRef.current = null;
+  }, []);
+
   const startInitTimeout = useCallback(() => {
     clearInitTimeout();
     initTimeoutRef.current = setTimeout(() => {
@@ -202,7 +211,12 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
           nextHeight = Math.ceil(params.height);
         }
 
-        if (previous.width !== null && nextWidth !== null && nextWidth > previous.width && nextHeight < previous.height) {
+        if (
+          previous.width !== null &&
+          nextWidth !== null &&
+          nextWidth > previous.width &&
+          nextHeight < previous.height
+        ) {
           nextHeight = previous.height;
         }
 
@@ -271,12 +285,18 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
   );
 
   useEffect(() => {
+    clearInitTimeout();
+    teardownBridge('resource-change');
+    initializedRef.current = false;
     measuredSizeRef.current = { width: null, height: INITIAL_SHELL_HEIGHT };
     sentResultRef.current = false;
+    setState('loading');
+    setErrorMsg('');
     setHasMeasuredSize(false);
     setIframeWidth(null);
     setIframeHeight(INITIAL_SHELL_HEIGHT);
-  }, [serverName, resourceUri]);
+    setIframeSrc(null);
+  }, [clearInitTimeout, resourceCacheKey, teardownBridge]);
 
   useEffect(() => {
     const iframe = iframeRef.current;
@@ -359,16 +379,12 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
   useEffect(() => {
     return () => {
       clearInitTimeout();
-      if (bridgeRef.current) {
-        void bridgeRef.current.teardownResource({ reason: 'unmount' }).catch(() => {});
-        bridgeRef.current = null;
-      }
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
+      teardownBridge('unmount');
+      // Blob URLs are cached across remounts for the same MCP App resource.
+      // Revoking here leaves a dead URL in blobUrlCache and breaks later renders.
+      blobUrlRef.current = null;
     };
-  }, [clearInitTimeout]);
+  }, [clearInitTimeout, teardownBridge]);
 
   if (state === 'error') {
     return <Alert type='error' content={errorMsg || t('mcp.apps.error')} className='mt-2' />;
@@ -392,7 +408,8 @@ const McpAppContainer: React.FC<McpAppContainerProps> = ({
           maxHeight: `${viewportMaxHeight}px`,
           overflowX: 'auto',
           overflowY: 'auto',
-        }}>
+        }}
+      >
         <iframe
           ref={iframeRef}
           src={iframeSrc || 'about:blank'}

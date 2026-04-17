@@ -195,6 +195,10 @@
     "noMatch": "未找到相符內容",
     "count": "{{count}} 條"
   },
+  "thinking": {
+    "label": "思考中...",
+    "complete": "思考完成"
+  },
   "chat": {
     "noModelSelected": "當前會話未選擇模型，無法發送訊息",
     "sendMessageTo": "發送訊息到 {{model}}",

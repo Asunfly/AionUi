@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IMessageAcpToolCall, IMessageToolGroup } from '@/common/chat/chatLib';
 import type { IMcpServer } from '@/common/config/storage';
@@ -54,6 +54,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 import MessageToolGroupSummary from '@/renderer/pages/conversation/Messages/components/MessageToolGroupSummary';
+import { McpAppMessageSection } from '@/renderer/pages/conversation/Messages/mcp';
 
 describe('MessageToolGroupSummary MCP Apps', () => {
   beforeEach(() => {
@@ -89,6 +90,7 @@ describe('MessageToolGroupSummary MCP Apps', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -169,7 +171,7 @@ describe('MessageToolGroupSummary MCP Apps', () => {
         {
           callId: 'call-4',
           name: 'Tool: drawio/create_diagram',
-          description: '{"xml":"<mxGraphModel id=\"tool-prefix\" />"}',
+          description: '{"xml":"<mxGraphModel id=\\"tool-prefix\\" />"}',
           renderOutputAsMarkdown: false,
           resultDisplay: 'diagram created via prefixed slash format',
           status: 'Success',
@@ -294,5 +296,64 @@ describe('MessageToolGroupSummary MCP Apps', () => {
 
     expect(screen.queryByTestId('mcp-app')).not.toBeInTheDocument();
     expect(getConfigMock).not.toHaveBeenCalled();
+  });
+
+  it('refreshes mounted MCP App sections when tool UI metadata is populated after the first config read', async () => {
+    vi.useFakeTimers();
+    const serverWithoutUi: IMcpServer = {
+      id: 'drawio-id',
+      name: 'drawio',
+      enabled: true,
+      transport: { type: 'http', url: 'https://mcp.draw.io/mcp' },
+      tools: [{ name: 'create_diagram', description: 'Create a diagram' }],
+      createdAt: 1,
+      updatedAt: 1,
+      originalJson: '{}',
+    };
+    const serverWithUi: IMcpServer = {
+      ...serverWithoutUi,
+      tools: [
+        {
+          name: 'create_diagram',
+          description: 'Create a diagram',
+          _meta: {
+            ui: {
+              resourceUri: 'ui://drawio/app.html',
+            },
+          },
+        },
+      ],
+    };
+
+    getConfigMock.mockImplementation(async (key: string) => {
+      if (key !== 'mcp.config') return null;
+      return getConfigMock.mock.calls.length <= 1 ? [serverWithoutUi] : [serverWithUi];
+    });
+
+    render(
+      <McpAppMessageSection
+        mcp={{
+          serverName: 'drawio',
+          toolName: 'create_diagram',
+          toolDisplayName: 'create_diagram',
+          arguments: { xml: '<mxGraphModel />' },
+        }}
+        toolResult='diagram created'
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(getConfigMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('mcp-app')).not.toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('mcp-app')).toBeInTheDocument();
   });
 });

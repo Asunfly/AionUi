@@ -23,7 +23,27 @@ type McpUiResourceResult = {
 type CachedConnection = {
   client: Client;
   createdAt: number;
+  transportSignature: string;
 };
+
+function stableSerialize(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  if (typeof value !== 'object') return JSON.stringify(value);
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).toSorted(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`).join(',')}}`;
+}
+
+function getTransportSignature(transport: IMcpServer['transport']): string {
+  return stableSerialize(transport);
+}
 
 function summarizeValue(value: unknown, maxLength = 240): string {
   if (value === undefined) return 'undefined';
@@ -173,7 +193,12 @@ export class McpAppsService {
 
   private async getOrCreateClient(serverName: string, transport: IMcpServer['transport']): Promise<Client> {
     const cached = this.connections.get(serverName);
-    if (cached && Date.now() - cached.createdAt < this.maxConnectionAge) {
+    const transportSignature = getTransportSignature(transport);
+    if (
+      cached &&
+      cached.transportSignature === transportSignature &&
+      Date.now() - cached.createdAt < this.maxConnectionAge
+    ) {
       mainLog(MCP_APPS_SERVICE_TAG, 'client.reuse', {
         serverName,
         ageMs: Date.now() - cached.createdAt,
@@ -186,6 +211,7 @@ export class McpAppsService {
       mainLog(MCP_APPS_SERVICE_TAG, 'client.stale', {
         serverName,
         ageMs: Date.now() - cached.createdAt,
+        transportChanged: cached.transportSignature !== transportSignature,
       });
       await this.disconnect(serverName);
     }
@@ -213,7 +239,7 @@ export class McpAppsService {
     await client.connect(mcpTransport);
     mainLog(MCP_APPS_SERVICE_TAG, 'client.connect.success', { serverName });
 
-    this.connections.set(serverName, { client, createdAt: Date.now() });
+    this.connections.set(serverName, { client, createdAt: Date.now(), transportSignature });
     return client;
   }
 

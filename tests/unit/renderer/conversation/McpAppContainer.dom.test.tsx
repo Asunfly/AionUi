@@ -11,12 +11,10 @@ const createObjectUrlMock = vi.fn();
 const revokeObjectUrlMock = vi.fn();
 
 let shouldAutoInitialize = true;
-let activeBridge:
-  | {
-      oninitialized?: () => void;
-      onsizechange?: (params: { width?: number; height?: number }) => void;
-    }
-  | null = null;
+let activeBridge: {
+  oninitialized?: () => void;
+  onsizechange?: (params: { width?: number; height?: number }) => void;
+} | null = null;
 let hostConnected = false;
 
 const simulateAppInitializeAttempt = () => {
@@ -58,11 +56,12 @@ vi.mock('@modelcontextprotocol/ext-apps/app-bridge', () => {
     oncalltool?: (params: { name: string; arguments?: Record<string, unknown> }) => Promise<unknown>;
     oninitialized?: () => void;
 
-    constructor(..._args: unknown[]) {}
-
     async connect(..._args: unknown[]) {
       hostConnected = true;
-      activeBridge = this;
+      activeBridge = {
+        oninitialized: () => this.oninitialized?.(),
+        onsizechange: (params) => this.onsizechange?.(params),
+      };
 
       if (shouldAutoInitialize) {
         this.oninitialized?.();
@@ -83,7 +82,11 @@ vi.mock('@modelcontextprotocol/ext-apps/app-bridge', () => {
   }
 
   class MockPostMessageTransport {
-    constructor(..._args: unknown[]) {}
+    readonly args: unknown[];
+
+    constructor(...args: unknown[]) {
+      this.args = args;
+    }
   }
 
   return {
@@ -227,6 +230,74 @@ describe('McpAppContainer init timeout', () => {
 
     expect(createObjectUrlMock).toHaveBeenCalledTimes(1);
     expect(readUiResourceInvokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps cached blob URLs alive across ordinary unmounts so remounts can reuse them', async () => {
+    const firstRender = render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    revokeObjectUrlMock.mockClear();
+
+    firstRender.unmount();
+
+    expect(revokeObjectUrlMock).not.toHaveBeenCalled();
+
+    render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/mcp-app.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(createObjectUrlMock).toHaveBeenCalledTimes(1);
+    expect(readUiResourceInvokeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconnects the host bridge when the rendered MCP app resource changes', async () => {
+    const { rerender } = render(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/first.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        toolArguments={{ xml: '<mxGraphModel id="first" />' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(sendToolInputMock).toHaveBeenCalledWith({
+      arguments: { xml: '<mxGraphModel id="first" />' },
+    });
+
+    rerender(
+      <McpAppContainer
+        serverName='drawio'
+        resourceUri='ui://drawio/second.html'
+        transport={{ type: 'http', url: 'https://mcp.draw.io/mcp' }}
+        toolArguments={{ xml: '<mxGraphModel id="second" />' }}
+      />
+    );
+
+    await flushPromises();
+    await flushPromises();
+
+    expect(teardownResourceMock).toHaveBeenCalledWith({ reason: 'resource-change' });
+    expect(sendToolInputMock).toHaveBeenCalledWith({
+      arguments: { xml: '<mxGraphModel id="second" />' },
+    });
   });
 
   it('does not show timeout after the app initializes successfully', async () => {
@@ -382,7 +453,9 @@ describe('McpAppContainer init timeout', () => {
     });
 
     expect(Number.parseInt(iframe.style.height, 10)).toBe(400);
-    expect(Number.parseInt(iframe.style.height, 10)).toBeLessThanOrEqual(Number.parseInt(scrollShell.style.maxHeight, 10));
+    expect(Number.parseInt(iframe.style.height, 10)).toBeLessThanOrEqual(
+      Number.parseInt(scrollShell.style.maxHeight, 10)
+    );
     expect(scrollShell.style.overflowY).toBe('auto');
     expect(scrollShell.style.overflowX).toBe('auto');
   });
